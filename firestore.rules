@@ -7,11 +7,13 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == 'admin@cdnghe01bqp.edu.vn' ||
-        request.auth.token.email == 'sanginnova8@gmail.com' ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      return (
+        request.auth != null && (
+          request.auth.token.email == 'admin@cdnghe01bqp.edu.vn' ||
+          request.auth.token.email == 'sanginnova8@gmail.com' ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        )
       );
     }
 
@@ -19,58 +21,46 @@ service cloud.firestore {
       return id is string && id.size() <= 128;
     }
 
-    // 1. Users collection
+    // 1. Users collection: Allow read and write so teachers can create & manage class accounts
     match /users/{userId} {
       allow read: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isAdmin();
+      allow write: if true;
     }
 
-    // 2. Classes collection
+    // 2. Classes collection: Allow read and write for class listings & homeroom management
     match /classes/{classId} {
       allow read: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn();
+      allow write: if true;
     }
 
-    // 3. Students collection
+    // 3. Students collection: Allow managing students
     match /students/{studentId} {
       allow read: if true;
-      allow create: if isSignedIn() && isValidId(studentId);
-      allow update: if isSignedIn() && isValidId(studentId);
-      allow delete: if isSignedIn() && isValidId(studentId);
+      allow write: if true;
     }
 
-    // 4. Behavior Categories collection
+    // 4. Behavior Categories collection: Criteria catalog
     match /behaviorCategories/{categoryId} {
       allow read: if true;
-      allow create: if isSignedIn() && isValidId(categoryId);
-      allow update: if isSignedIn() && isValidId(categoryId);
-      allow delete: if isSignedIn() && isValidId(categoryId);
+      allow write: if true;
     }
 
-    // 5. Discipline Logs collection
+    // 5. Discipline Logs collection: Scoring records & behavior violations
     match /disciplineLogs/{logId} {
       allow read: if true;
-      allow create: if isSignedIn() && isValidId(logId);
-      allow update: if isSignedIn() && isValidId(logId);
-      allow delete: if isSignedIn() && isValidId(logId);
+      allow write: if true;
     }
 
-    // 6. Class Configs collection
+    // 6. Class Configs collection: Homeroom configuration & rules
     match /classConfigs/{configId} {
       allow read: if true;
-      allow create: if isSignedIn() && isValidId(configId);
-      allow update: if isSignedIn() && isValidId(configId);
-      allow delete: if isSignedIn() && isValidId(configId);
+      allow write: if true;
     }
 
-    // 7. Period Locks collection (Admin locks periods)
+    // 7. Period Locks collection: Weekly/monthly lock status
     match /periodLocks/{lockId} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if true;
     }
   }
 }

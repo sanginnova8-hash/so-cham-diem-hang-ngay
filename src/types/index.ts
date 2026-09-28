@@ -16,6 +16,7 @@ export interface UserAccount {
   assignedClassName: string;
   department?: string; // Khoa / Bộ môn
   phone?: string;
+  password?: string;
   isActive: boolean;
   lastLoginAt?: string;
   avatarUrl?: string;
