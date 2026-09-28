@@ -900,7 +900,7 @@ export const SettingsBackupView: React.FC = () => {
                   </button>
                 ) : (
                   <button
-                    onClick={login}
+                    onClick={() => login()}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-semibold rounded-xl transition cursor-pointer"
                   >
                     <LogIn className="h-3.5 w-3.5" />
