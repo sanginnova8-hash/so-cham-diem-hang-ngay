@@ -179,6 +179,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
+          {/* Direct Logout Button for Teacher / Admin */}
+          {(activeAccount || userRole !== 'guest' || currentUser) && (
+            <button
+              type="button"
+              onClick={logout}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-white border border-rose-500/40 rounded-xl text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer"
+              title="Đăng xuất khỏi hệ thống"
+            >
+              <LogOut className="h-4 w-4 text-rose-400" />
+              <span className="hidden sm:inline">Đăng xuất</span>
+            </button>
+          )}
+
           {/* Persistent CSDL Cloud Status */}
           <div className="flex items-center gap-2 bg-slate-800/90 px-2.5 py-1.5 rounded-xl border border-emerald-500/40 text-xs shadow-xs">
             <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
@@ -194,11 +207,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isCloudSyncing ? 'animate-spin text-blue-400' : ''}`} />
             </button>
-            {currentUser && (
+            {(currentUser || activeAccount) && (
               <>
                 <span className="text-slate-600 hidden sm:inline">|</span>
-                <span className="text-slate-300 max-w-[110px] truncate hidden sm:inline text-[11px]" title={currentUser.email || currentUser.displayName || ''}>
-                  {currentUser.displayName || currentUser.email}
+                <span className="text-slate-300 max-w-[110px] truncate hidden sm:inline text-[11px]" title={activeAccount?.displayName || currentUser?.displayName || activeAccount?.email || currentUser?.email || ''}>
+                  {activeAccount?.displayName || currentUser?.displayName || activeAccount?.email || currentUser?.email}
                 </span>
                 <button
                   onClick={logout}

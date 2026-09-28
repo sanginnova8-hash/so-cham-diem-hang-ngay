@@ -14,6 +14,8 @@ import {
   Sparkles,
   Eye,
   Building2,
+  LogOut,
+  UserCheck,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
@@ -24,6 +26,9 @@ interface LoginModalProps {
 
 export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
   const {
+    userRole,
+    activeAccount,
+    logout,
     login,
     registerWithGoogle,
     registerQuickOneTouch,
@@ -216,6 +221,46 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {/* Active Account Status & Logout for Teachers */}
+        {(activeAccount || userRole !== 'guest') && (
+          <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-750 dark:to-slate-700 border border-blue-200 dark:border-slate-650 rounded-2xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
+                  <UserCheck className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">
+                      {activeAccount?.displayName || 'Tài khoản đang đăng nhập'}
+                    </h4>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-200 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
+                      {userRole === 'admin' ? 'Quản trị' : 'Giáo viên'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                    {activeAccount?.assignedClassName || 'Lớp chủ nhiệm'} • {activeAccount?.email || activeAccount?.username || 'Đang hoạt động'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-blue-200/60 dark:border-slate-600 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  await logout();
+                  onClose();
+                }}
+                className="w-full py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>ĐĂNG XUẤT KHỎI HỆ THỐNG</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Tab Switcher: Đăng Nhập vs Đăng Ký */}
         <div className="flex p-1 bg-slate-100 dark:bg-slate-700/60 rounded-2xl text-xs font-bold">

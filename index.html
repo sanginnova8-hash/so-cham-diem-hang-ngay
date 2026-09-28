@@ -3,6 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function () {
+        try {
+          var originalFetch = window.fetch;
+          if (originalFetch) {
+            var _fetch = originalFetch.bind(window);
+            Object.defineProperty(window, 'fetch', {
+              get: function () {
+                return _fetch;
+              },
+              set: function (val) {
+                _fetch = val;
+              },
+              configurable: true,
+              enumerable: true,
+            });
+          }
+        } catch (e) {
+          // ignore
+        }
+      })();
+    </script>
     <title>Sổ Chấm Điểm Hàng Ngày</title>
     <meta name="description" content="Ứng dụng ghi nhận nề nếp, tính điểm thi đua và tổng hợp rèn luyện học sinh dành cho giáo viên chủ nhiệm" />
     <meta property="og:title" content="Sổ Chấm Điểm Hàng Ngày" />
@@ -15,4 +37,3 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
