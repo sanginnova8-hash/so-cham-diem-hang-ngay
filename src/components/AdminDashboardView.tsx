@@ -1,0 +1,802 @@
+import React, { useState } from 'react';
+import {
+  ShieldCheck,
+  Users,
+  Award,
+  AlertTriangle,
+  Lock,
+  Unlock,
+  KeyRound,
+  UserPlus,
+  Building2,
+  Calendar,
+  CheckCircle2,
+  Search,
+  Eye,
+  Trash2,
+  RefreshCw,
+  HardDrive,
+  Download,
+  Check,
+  UserCheck,
+  UserX,
+  FileSpreadsheet,
+} from 'lucide-react';
+import { useApp } from '../context/AppContext';
+import { UserAccount, SchoolClass, UserRole } from '../types';
+import { TabType } from './Navbar';
+
+interface AdminDashboardViewProps {
+  onNavigateTab: (tab: TabType) => void;
+}
+
+export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNavigateTab }) => {
+  const {
+    userAccounts,
+    schoolClasses,
+    lockedPeriods,
+    toggleLockPeriod,
+    isPeriodLocked,
+    enterInspectorMode,
+    updateUserAccount,
+    resetUserPassword,
+    toggleUserAccountStatus,
+    deleteUserAccount,
+    addUserAccount,
+    exportFullBackupJson,
+  } = useApp();
+
+  const [activeAdminSubTab, setActiveAdminSubTab] = useState<'ranking' | 'teachers' | 'locking' | 'system'>('ranking');
+  const [teacherSearch, setTeacherSearch] = useState('');
+
+  // Password reset modal state
+  const [resetModalInfo, setResetModalInfo] = useState<{ open: boolean; userName: string; tempPass: string }>({
+    open: false,
+    userName: '',
+    tempPass: '',
+  });
+
+  // Add new teacher modal state
+  const [isAddTeacherModalOpen, setIsAddTeacherModalOpen] = useState(false);
+  const [newTeacherForm, setNewTeacherForm] = useState({
+    displayName: '',
+    email: '',
+    role: 'teacher' as UserRole,
+    assignedClassId: '10A8',
+    assignedClassName: 'Lớp 10A8 (Điện CN)',
+    department: 'Khoa Điện - Điện tử',
+    phone: '',
+    isActive: true,
+  });
+
+  // Filtered teachers
+  const filteredTeachers = userAccounts.filter((acc) => {
+    const q = teacherSearch.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      acc.displayName.toLowerCase().includes(q) ||
+      acc.email.toLowerCase().includes(q) ||
+      acc.assignedClassName.toLowerCase().includes(q) ||
+      (acc.department && acc.department.toLowerCase().includes(q))
+    );
+  });
+
+  // Aggregate stats across all school classes
+  const totalStudents = schoolClasses.reduce((acc, c) => acc + c.studentCount, 0);
+  const totalViolations = schoolClasses.reduce((acc, c) => acc + c.violationCount, 0);
+  const totalTopRank = schoolClasses.reduce((acc, c) => acc + c.topRankCount, 0);
+  const overallAvgScore =
+    schoolClasses.length > 0
+      ? (schoolClasses.reduce((acc, c) => acc + c.averageScore, 0) / schoolClasses.length).toFixed(1)
+      : '9.2';
+  const topRate = totalStudents > 0 ? Math.round((totalTopRank / totalStudents) * 100) : 85;
+
+  const handleResetPassword = (acc: UserAccount) => {
+    const res = resetUserPassword(acc.uid);
+    setResetModalInfo({
+      open: true,
+      userName: acc.displayName,
+      tempPass: res.tempPass,
+    });
+  };
+
+  const handleCreateTeacher = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTeacherForm.displayName || !newTeacherForm.email) {
+      alert('Vui lòng nhập đầy đủ họ tên và email giáo viên');
+      return;
+    }
+    addUserAccount(newTeacherForm);
+    setIsAddTeacherModalOpen(false);
+    setNewTeacherForm({
+      displayName: '',
+      email: '',
+      role: 'teacher',
+      assignedClassId: '10A8',
+      assignedClassName: 'Lớp 10A8 (Điện CN)',
+      department: 'Khoa Điện - Điện tử',
+      phone: '',
+      isActive: true,
+    });
+  };
+
+  const handleInspectClass = (cls: SchoolClass) => {
+    enterInspectorMode(cls);
+    onNavigateTab('daily-log');
+  };
+
+  const handleDownloadBackup = () => {
+    const jsonStr = exportFullBackupJson();
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Sao_luu_toan_truong_CDNghe01_${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Top Header */}
+      <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-12 w-12 rounded-2xl bg-purple-600 flex items-center justify-center text-white shadow-lg shadow-purple-500/25">
+              <ShieldCheck className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
+                  Bảng Điều Hành Quản Trị Hệ Thống (Admin Panel)
+                </h1>
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                  Cấp độ 3: Quản Trị Viên
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Ban Giám Hiệu & Phòng Đào tạo - Quản lý HSSV • Trường Cao đẳng Nghề 01 - BQP
+              </p>
+            </div>
+          </div>
+
+          {/* Sub tabs selector */}
+          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 dark:bg-slate-700/60 p-1.5 rounded-2xl text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setActiveAdminSubTab('ranking')}
+              className={`px-3 py-1.5 rounded-xl transition ${
+                activeAdminSubTab === 'ranking'
+                  ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Thi đua toàn trường
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveAdminSubTab('teachers')}
+              className={`px-3 py-1.5 rounded-xl transition ${
+                activeAdminSubTab === 'teachers'
+                  ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Tài khoản & Phân quyền ({userAccounts.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveAdminSubTab('locking')}
+              className={`px-3 py-1.5 rounded-xl transition ${
+                activeAdminSubTab === 'locking'
+                  ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Khóa sổ thi đua
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveAdminSubTab('system')}
+              className={`px-3 py-1.5 rounded-xl transition ${
+                activeAdminSubTab === 'system'
+                  ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Hạ tầng & Sao lưu
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Overview Stat Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <span>Tổng HSSV toàn trường</span>
+            <Users className="h-4 w-4 text-blue-500" />
+          </div>
+          <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1 font-mono">
+            {totalStudents} <span className="text-xs font-normal text-slate-400 font-sans">học viên</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1">
+            Đang quản lý trên {schoolClasses.length} lớp chuyên ngành
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <span>Điểm TB rèn luyện</span>
+            <Award className="h-4 w-4 text-amber-500" />
+          </div>
+          <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1 font-mono">
+            {overallAvgScore} <span className="text-xs font-normal text-slate-400 font-sans">/ 10đ</span>
+          </div>
+          <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 font-semibold flex items-center gap-1">
+            <CheckCircle2 className="h-3 w-3" /> Đạt chuẩn kỷ luật quân sự
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <span>Tỷ lệ rèn luyện Tốt</span>
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+          </div>
+          <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1 font-mono">
+            {topRate}%
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1">
+            {totalTopRank}/{totalStudents} học sinh xếp loại Tốt & Xuất sắc
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <span>Số vụ vi phạm nề nếp</span>
+            <AlertTriangle className="h-4 w-4 text-rose-500" />
+          </div>
+          <div className="text-2xl font-bold text-rose-600 dark:text-rose-400 mt-1 font-mono">
+            {totalViolations} <span className="text-xs font-normal text-slate-400 font-sans">lượt</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1">
+            Chủ yếu: Tác phong xưởng & đi muộn
+          </div>
+        </div>
+      </div>
+
+      {/* SUB-TAB 1: THI ĐUA TOÀN TRƯỜNG & BẢNG XẾP HẠNG */}
+      {activeAdminSubTab === 'ranking' && (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Award className="h-5 w-5 text-amber-500" />
+                  <span>Bảng Xếp Hạng Thi Đua Nề Nếp Các Lớp (Toàn Trường)</span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Được tổng hợp tự động từ kết quả chấm điểm rèn luyện hàng ngày của từng giáo viên chủ nhiệm
+                </p>
+              </div>
+
+              <div className="text-xs font-semibold text-slate-500">
+                Năm học: 2025 - 2026
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-600 dark:text-slate-400 font-bold uppercase">
+                    <th className="py-3 px-3">Hạng</th>
+                    <th className="py-3 px-3">Lớp Chuyên Ngành</th>
+                    <th className="py-3 px-3">Khoa / Bộ Môn</th>
+                    <th className="py-3 px-3">Giáo Viên Chủ Nhiệm</th>
+                    <th className="py-3 px-3 text-center">Quân Số</th>
+                    <th className="py-3 px-3 text-center">Điểm TB</th>
+                    <th className="py-3 px-3 text-center">Lỗi Vi Phạm</th>
+                    <th className="py-3 px-3 text-center">Tỷ Lệ Tốt</th>
+                    <th className="py-3 px-3 text-right">Thao Tác Thanh Tra</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                  {schoolClasses
+                    .slice()
+                    .sort((a, b) => b.averageScore - a.averageScore)
+                    .map((cls, idx) => (
+                      <tr key={cls.id} className="hover:bg-slate-50 dark:hover:bg-slate-750/50 transition">
+                        <td className="py-3 px-3 font-bold font-mono">
+                          {idx === 0 && <span className="text-amber-500 font-black">🥇 #1</span>}
+                          {idx === 1 && <span className="text-slate-400 font-black">🥈 #2</span>}
+                          {idx === 2 && <span className="text-amber-700 font-black">🥉 #3</span>}
+                          {idx > 2 && <span className="text-slate-500">#{idx + 1}</span>}
+                        </td>
+                        <td className="py-3 px-3 font-bold text-slate-900 dark:text-white">
+                          {cls.className}
+                        </td>
+                        <td className="py-3 px-3 text-slate-500">
+                          {cls.department}
+                        </td>
+                        <td className="py-3 px-3 font-medium text-slate-800 dark:text-slate-200">
+                          {cls.teacherName}
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono font-semibold">
+                          {cls.studentCount}
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono font-bold text-blue-600 dark:text-blue-400 text-sm">
+                          {cls.averageScore}
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono text-rose-600 font-semibold">
+                          {cls.violationCount}
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono text-emerald-600 font-bold">
+                          {Math.round((cls.topRankCount / cls.studentCount) * 100)}%
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleInspectClass(cls)}
+                            className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-semibold rounded-lg border border-purple-200 dark:border-purple-800 transition flex items-center gap-1 ml-auto cursor-pointer"
+                            title="Vào xem chi tiết sổ chấm điểm của lớp này ở Chế độ Thanh tra"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            <span>Vào kiểm tra sổ</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Key discipline insights */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-rose-500" />
+                <span>Top Vi Phạm Kỷ Luật Phổ Biến Toàn Trường</span>
+              </h4>
+              <div className="space-y-2 text-xs">
+                <div>
+                  <div className="flex justify-between font-semibold mb-1">
+                    <span>1. Không mang đầy đủ trang phục bảo hộ xưởng thực hành</span>
+                    <span className="text-rose-600 font-mono">9 lượt (45%)</span>
+                  </div>
+                  <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                    <div className="bg-rose-500 h-full rounded-full" style={{ width: '45%' }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between font-semibold mb-1">
+                    <span>2. Đi học muộn sau giờ hiệu lệnh báo thức / tập trung</span>
+                    <span className="text-amber-600 font-mono">6 lượt (30%)</span>
+                  </div>
+                  <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                    <div className="bg-amber-500 h-full rounded-full" style={{ width: '30%' }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between font-semibold mb-1">
+                    <span>3. Không đeo thẻ học sinh / sai quy cách tác phong quân sự</span>
+                    <span className="text-blue-600 font-mono">5 lượt (25%)</span>
+                  </div>
+                  <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                    <div className="bg-blue-500 h-full rounded-full" style={{ width: '25%' }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                <span>Biện Pháp Chấn Chỉnh Nề Nếp Của Ban Giám Hiệu</span>
+              </h4>
+              <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-400">
+                <li className="flex items-start gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 mt-1.5" />
+                  <span><strong>Đội Sao đỏ & Trực tuần:</strong> Tăng cường kiểm tra tại cổng trường và trước giờ vào xưởng lúc 07h00 và 13h15.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 mt-1.5" />
+                  <span><strong>An toàn lao động xưởng:</strong> Giáo viên hướng dẫn thực hành cương quyết không cho học viên vào xưởng nếu thiếu bảo hộ.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 mt-1.5" />
+                  <span><strong>Liên lạc gia đình:</strong> Yêu cầu GVCN dùng công cụ soạn tin Zalo tự động để thông báo ngay các lỗi đi muộn trong ngày.</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB 2: QUẢN LÝ TÀI KHOẢN GIÁO VIÊN & PHÂN QUYỀN */}
+      {activeAdminSubTab === 'teachers' && (
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700 pb-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Users className="h-5 w-5 text-blue-600" />
+                <span>Danh Sách Tài Khoản Giáo Viên & Quản Trị Viên ({userAccounts.length})</span>
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Cấp quyền Quản trị / Giáo viên, phân công lớp chủ nhiệm, cấp lại mật khẩu và khóa tài khoản
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="h-3.5 w-3.5 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Tìm giáo viên..."
+                  value={teacherSearch}
+                  onChange={(e) => setTeacherSearch(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-purple-500"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsAddTeacherModalOpen(true)}
+                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1 cursor-pointer"
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                <span>Thêm Giáo Viên</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-600 dark:text-slate-400 font-bold uppercase">
+                  <th className="py-2.5 px-3">Họ và Tên</th>
+                  <th className="py-2.5 px-3">Email / Tài khoản</th>
+                  <th className="py-2.5 px-3">Khoa / Bộ Môn</th>
+                  <th className="py-2.5 px-3">Lớp Phụ Trách</th>
+                  <th className="py-2.5 px-3 text-center">Vai Trò (Role)</th>
+                  <th className="py-2.5 px-3 text-center">Trạng Thái</th>
+                  <th className="py-2.5 px-3 text-center">Đăng Nhập Cuối</th>
+                  <th className="py-2.5 px-3 text-right">Thao Tác Quản Trị</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                {filteredTeachers.map((acc) => (
+                  <tr key={acc.uid} className="hover:bg-slate-50 dark:hover:bg-slate-750/50 transition">
+                    <td className="py-3 px-3 font-bold text-slate-900 dark:text-white">
+                      {acc.displayName}
+                    </td>
+                    <td className="py-3 px-3 text-slate-500 font-mono">
+                      {acc.email}
+                    </td>
+                    <td className="py-3 px-3 text-slate-600 dark:text-slate-300">
+                      {acc.department || 'Chưa cập nhật'}
+                    </td>
+                    <td className="py-3 px-3 font-semibold text-blue-600 dark:text-blue-400">
+                      {acc.assignedClassName}
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateUserAccount(acc.uid, {
+                            role: acc.role === 'admin' ? 'teacher' : 'admin',
+                          })
+                        }
+                        className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] transition ${
+                          acc.role === 'admin'
+                            ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                            : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                        }`}
+                        title="Bấm để chuyển đổi vai trò Admin <-> Giáo viên"
+                      >
+                        {acc.role === 'admin' ? 'Quản Trị Viên' : 'Giáo Viên'}
+                      </button>
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          acc.isActive
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                            : 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
+                        }`}
+                      >
+                        {acc.isActive ? 'Hoạt động' : 'Tạm khóa'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-center text-slate-400 font-mono text-[11px]">
+                      {acc.lastLoginAt || 'Chưa đăng nhập'}
+                    </td>
+                    <td className="py-3 px-3 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleResetPassword(acc)}
+                          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-500 hover:text-amber-600 transition"
+                          title="Cấp lại mật khẩu tạm thời cho giáo viên"
+                        >
+                          <KeyRound className="h-3.5 w-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => toggleUserAccountStatus(acc.uid)}
+                          className={`p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition ${
+                            acc.isActive
+                              ? 'text-slate-500 hover:text-rose-600'
+                              : 'text-slate-500 hover:text-emerald-600'
+                          }`}
+                          title={acc.isActive ? 'Khóa tài khoản này' : 'Mở khóa tài khoản'}
+                        >
+                          {acc.isActive ? <UserX className="h-3.5 w-3.5" /> : <UserCheck className="h-3.5 w-3.5" />}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Xác nhận xóa tài khoản giáo viên ${acc.displayName}?`)) {
+                              deleteUserAccount(acc.uid);
+                            }
+                          }}
+                          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-rose-600 transition"
+                          title="Xóa tài khoản này"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB 3: KHÓA SỔ THI ĐUA ĐỊNH KỲ (LOCK PERIOD MANAGEMENT) */}
+      {activeAdminSubTab === 'locking' && (
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Lock className="h-5 w-5 text-amber-500" />
+              <span>Quản Lý Khóa Sổ Thi Đua Định Kỳ (Chống Sửa Điểm Hồi Tố)</span>
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Sau khi Ban Giám Hiệu hoặc Hội đồng thi đua đã bình xét tuần/tháng, Admin bật "Khóa sổ" để ngăn giáo viên tự ý sửa điểm, đảm bảo tính công bằng và kỷ luật.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((weekNum) => {
+              const locked = isPeriodLocked('week', weekNum);
+              return (
+                <div
+                  key={weekNum}
+                  className={`p-4 rounded-2xl border transition flex flex-col justify-between space-y-3 ${
+                    locked
+                      ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/30'
+                      : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                        Tuần Học Số {weekNum}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {locked ? 'ĐÃ KHÓA SỔ (Chỉ xem)' : 'Đang mở nhập điểm'}
+                      </p>
+                    </div>
+                    {locked ? (
+                      <span className="p-1.5 rounded-lg bg-amber-500 text-white">
+                        <Lock className="h-4 w-4" />
+                      </span>
+                    ) : (
+                      <span className="p-1.5 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                        <Unlock className="h-4 w-4" />
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleLockPeriod('week', weekNum, `Khóa sổ Tuần ${weekNum} sau khi bình xét`)}
+                    className={`w-full py-1.5 text-xs font-bold rounded-xl transition ${
+                      locked
+                        ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200'
+                    }`}
+                  >
+                    {locked ? 'Mở Khóa Tuần Này' : 'Khóa Sổ Tuần Này'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB 4: HẠ TẦNG CSDL & SAO LƯU TOÀN TRƯỜNG */}
+      {activeAdminSubTab === 'system' && (
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <HardDrive className="h-5 w-5 text-blue-600" />
+              <span>Hạ Tầng CSDL Đám Mây & Sao Lưu Toàn Trường</span>
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 space-y-2">
+                <span className="font-bold text-slate-700 dark:text-slate-300">Thông tin Cloud Firestore:</span>
+                <div className="space-y-1 font-mono text-[11px] text-slate-600 dark:text-slate-400">
+                  <div>• Database ID: <strong className="text-purple-600 dark:text-purple-400">ai-studio-0e7af025-7ec9-4c49-b559-221e9a34f8ff</strong></div>
+                  <div>• Project ID: <strong className="text-slate-800 dark:text-slate-200">core-grid-bsmzh</strong></div>
+                  <div>• Bảo Mật: Firestore Rules RBAC per-teacher isolation</div>
+                  <div>• Trạng thái: <span className="text-emerald-600 font-bold">Đã kích hoạt & sẵn sàng</span></div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 flex flex-col justify-between space-y-3">
+                <div>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Sao lưu dữ liệu dự phòng toàn trường:</span>
+                  <p className="text-slate-500 mt-1">
+                    Xuất file JSON chứa toàn bộ danh sách HSSV, nhật ký chấm điểm và tiêu chí thi đua của các lớp để lưu trữ cục bộ an toàn.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadBackup}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Tải Bản Sao Lưu JSON Toàn Trường</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RESET PASSWORD SUCCESS */}
+      {resetModalInfo.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-sm w-full p-6 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
+            <div className="h-12 w-12 rounded-2xl bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400 flex items-center justify-center mx-auto">
+              <KeyRound className="h-6 w-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                Cấp Lại Mật Khẩu Thành Công!
+              </h4>
+              <p className="text-xs text-slate-500">
+                Mật khẩu tạm thời cho thầy/cô <strong>{resetModalInfo.userName}</strong>:
+              </p>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center">
+              <span className="font-mono text-xl font-bold text-purple-600 dark:text-purple-400 tracking-wider">
+                {resetModalInfo.tempPass}
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-400 text-center">
+              Vui lòng gửi mã này cho giáo viên để đăng nhập lại và đổi mật khẩu mới.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setResetModalInfo({ open: false, userName: '', tempPass: '' })}
+              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition"
+            >
+              Đã sao chép & Đóng
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD TEACHER */}
+      {isAddTeacherModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
+            <h4 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-purple-600" />
+              <span>Thêm Tài Khoản Giáo Viên / Quản Trị</span>
+            </h4>
+
+            <form onSubmit={handleCreateTeacher} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Họ và tên giáo viên:
+                </label>
+                <input
+                  type="text"
+                  placeholder="vd: Thầy Phạm Quang Hùng"
+                  value={newTeacherForm.displayName}
+                  onChange={(e) => setNewTeacherForm({ ...newTeacherForm, displayName: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Email / Tên đăng nhập:
+                </label>
+                <input
+                  type="email"
+                  placeholder="vd: hung.pham@cdnghe01bqp.edu.vn"
+                  value={newTeacherForm.email}
+                  onChange={(e) => setNewTeacherForm({ ...newTeacherForm, email: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Khoa / Bộ môn:
+                  </label>
+                  <input
+                    type="text"
+                    value={newTeacherForm.department}
+                    onChange={(e) => setNewTeacherForm({ ...newTeacherForm, department: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Lớp phụ trách:
+                  </label>
+                  <input
+                    type="text"
+                    value={newTeacherForm.assignedClassName}
+                    onChange={(e) => setNewTeacherForm({ ...newTeacherForm, assignedClassName: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Vai trò (Role):
+                </label>
+                <select
+                  value={newTeacherForm.role}
+                  onChange={(e) => setNewTeacherForm({ ...newTeacherForm, role: e.target.value as UserRole })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
+                >
+                  <option value="teacher">Giáo viên chủ nhiệm (Teacher)</option>
+                  <option value="admin">Quản trị viên hệ thống (Admin)</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setIsAddTeacherModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition"
+                >
+                  Tạo tài khoản
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

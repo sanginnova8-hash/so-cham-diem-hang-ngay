@@ -1,0 +1,76 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'admin@cdnghe01bqp.edu.vn' ||
+        request.auth.token.email == 'sanginnova8@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128;
+    }
+
+    // 1. Users collection
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // 2. Classes collection
+    match /classes/{classId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    // 3. Students collection
+    match /students/{studentId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidId(studentId);
+      allow update: if isSignedIn() && isValidId(studentId);
+      allow delete: if isSignedIn() && isValidId(studentId);
+    }
+
+    // 4. Behavior Categories collection
+    match /behaviorCategories/{categoryId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidId(categoryId);
+      allow update: if isSignedIn() && isValidId(categoryId);
+      allow delete: if isSignedIn() && isValidId(categoryId);
+    }
+
+    // 5. Discipline Logs collection
+    match /disciplineLogs/{logId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidId(logId);
+      allow update: if isSignedIn() && isValidId(logId);
+      allow delete: if isSignedIn() && isValidId(logId);
+    }
+
+    // 6. Class Configs collection
+    match /classConfigs/{configId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidId(configId);
+      allow update: if isSignedIn() && isValidId(configId);
+      allow delete: if isSignedIn() && isValidId(configId);
+    }
+
+    // 7. Period Locks collection (Admin locks periods)
+    match /periodLocks/{lockId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+  }
+}
