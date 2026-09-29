@@ -17,6 +17,7 @@ export interface UserAccount {
   department?: string; // Khoa / Bộ môn
   phone?: string;
   password?: string;
+  authProvider?: 'google' | 'password' | 'quick';
   isActive: boolean;
   lastLoginAt?: string;
   avatarUrl?: string;

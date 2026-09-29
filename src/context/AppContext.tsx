@@ -78,6 +78,7 @@ interface AppContextType {
   setLocalMode: (val: boolean) => void;
   isCloudSyncing: boolean;
   cloudSyncError: string | null;
+  isGoogleAuth: boolean;
   login: (fallbackEmail?: string) => Promise<void>;
   registerWithGoogle: (customClassName?: string, department?: string, fallbackEmail?: string) => Promise<void>;
   registerQuickOneTouch: (params: {
@@ -507,6 +508,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, []);
 
+  const isGoogleAuth = !!(
+    currentUser &&
+    !currentUser.isAnonymous &&
+    currentUser.providerData?.some((p) => p.providerId === 'google.com')
+  );
+
   const getEffectiveTeacherId = (): string => {
     return activeAccount?.uid || (currentUser ? currentUser.uid : INITIAL_TEACHER_ID);
   };
@@ -677,37 +684,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const login = async (fallbackEmail?: string) => {
+  const login = async () => {
     setIsCloudSyncing(true);
     let user: User | null = null;
     try {
       user = await loginWithGoogle();
     } catch (err: any) {
-      if (err?.code === 'auth/unauthorized-domain' || err?.message?.includes('unauthorized-domain')) {
-        console.warn('Google popup unauthorized domain, switching to direct Google user login:', err);
-        const targetEmail = fallbackEmail || 'sanginnova8@gmail.com';
-        const matched = userAccounts.find(
-          (a) => a.email.toLowerCase() === targetEmail.toLowerCase() ||
-                 (a.username && a.username.toLowerCase() === 'sanginnova')
-        );
-        if (matched) {
-          setActiveAccount(matched);
-          setUserRole(matched.role);
-          setIsLocalMode(false);
-          await loadUserDataFromFirestore(matched.uid);
-          setIsCloudSyncing(false);
-          return;
-        } else {
-          await registerQuickOneTouch({
-            displayName: 'Thầy Trần Văn Sang',
-            emailOrUsername: targetEmail,
-            className: 'Lớp 10A8',
-            department: 'Khoa Điện - Điện tử',
-          });
-          return;
-        }
-      }
       setIsCloudSyncing(false);
+      console.warn('Google login error detail:', err);
+      if (err?.code === 'auth/unauthorized-domain' || err?.message?.includes('unauthorized-domain')) {
+        throw new Error(
+          'Tên miền hiện tại (Cloud Run preview) chưa được cấp quyền trong Firebase Console (mã lỗi auth/unauthorized-domain). Thầy cô vui lòng sử dụng tài khoản Quản trị viên / Giáo viên (Tên: sanginnova / Mật khẩu: Baotran2010) để đăng nhập ngay!'
+        );
+      } else if (err?.code === 'auth/popup-blocked' || err?.message?.includes('popup-blocked')) {
+        throw new Error(
+          'Trình duyệt đã chặn cửa sổ đăng nhập Google (Pop-up). Thầy cô vui lòng cho phép pop-up trên trình duyệt hoặc đăng nhập bằng Tên đăng nhập & Mật khẩu.'
+        );
+      } else if (err?.code === 'auth/popup-closed-by-user') {
+        throw new Error('Cửa sổ đăng nhập Google đã bị đóng trước khi hoàn tất.');
+      }
       throw err;
     }
 
@@ -741,6 +736,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           username: user.email ? user.email.split('@')[0] : 'user',
           displayName: user.displayName || 'Giáo viên',
           role: isAdmin ? 'admin' : 'teacher',
+          authProvider: 'google',
           assignedClassId: classId,
           assignedClassName: `Lớp ${autoClassName}`,
           department: 'Khoa Chuyên ngành',
@@ -767,6 +763,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setUserAccounts((prev) => [...prev, acc!]);
         setSchoolClasses((prev) => [...prev, newClass]);
         setClassConfig(newConfig);
+      } else {
+        acc = { ...acc, authProvider: 'google' };
       }
 
       setActiveAccount(acc);
@@ -781,23 +779,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const registerWithGoogle = async (customClassName?: string, department?: string, fallbackEmail?: string) => {
+  const registerWithGoogle = async (customClassName?: string, department?: string) => {
     setIsCloudSyncing(true);
     let user: User | null = null;
     try {
       user = await loginWithGoogle();
     } catch (err: any) {
-      if (err?.code === 'auth/unauthorized-domain' || err?.message?.includes('unauthorized-domain')) {
-        console.warn('Google popup unauthorized domain, automatically using Smart 1-Touch registration:', err);
-        await registerQuickOneTouch({
-          displayName: 'Thầy Trần Văn Sang',
-          emailOrUsername: fallbackEmail || 'sanginnova8@gmail.com',
-          className: customClassName || 'Lớp Mới K46',
-          department: department || 'Khoa Điện - Điện tử',
-        });
-        return;
-      }
       setIsCloudSyncing(false);
+      if (err?.code === 'auth/unauthorized-domain' || err?.message?.includes('unauthorized-domain')) {
+        throw new Error(
+          'Tên miền hiện tại chưa được cấp quyền Google OAuth trong Firebase Console (auth/unauthorized-domain). Thầy cô vui lòng sử dụng biểu mẫu Đăng ký bằng Tên đăng nhập & Mật khẩu bên dưới!'
+        );
+      } else if (err?.code === 'auth/popup-blocked' || err?.message?.includes('popup-blocked')) {
+        throw new Error(
+          'Trình duyệt đã chặn cửa sổ đăng nhập Google. Thầy cô vui lòng cho phép pop-up hoặc đăng ký bằng Mật khẩu bên dưới.'
+        );
+      }
       throw err;
     }
 
@@ -1950,6 +1947,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setLocalMode: setIsLocalMode,
         isCloudSyncing,
         cloudSyncError,
+        isGoogleAuth,
         login,
         registerWithGoogle,
         registerQuickOneTouch,

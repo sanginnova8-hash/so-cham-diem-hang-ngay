@@ -16,6 +16,8 @@ import { PublicPortalView } from './components/PublicPortalView';
 import { AdminDashboardView } from './components/AdminDashboardView';
 import { InspectorBanner } from './components/InspectorBanner';
 import { LoginModal } from './components/LoginModal';
+import { CommandPalette } from './components/CommandPalette';
+import { MobileBottomNav } from './components/MobileBottomNav';
 
 function MainApp() {
   const { classConfig, userRole, inspectorModeClass } = useApp();
@@ -25,6 +27,7 @@ function MainApp() {
   const [isNewLogModalOpen, setIsNewLogModalOpen] = useState(false);
   const [isEditClassModalOpen, setIsEditClassModalOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [reportStudentId, setReportStudentId] = useState<string | null>(null);
 
   // Sync tab with role transitions
@@ -42,6 +45,32 @@ function MainApp() {
       setActiveTab('dashboard');
     }
   }, [userRole, activeTab]);
+
+  // Command palette listener
+  useEffect(() => {
+    const handleOpenCommandPalette = () => setIsCommandPaletteOpen(true);
+    window.addEventListener('open-command-palette', handleOpenCommandPalette);
+    return () => window.removeEventListener('open-command-palette', handleOpenCommandPalette);
+  }, []);
+
+  // Pro-Max Keyboard Shortcuts: Press 'N' to open new log modal
+  useEffect(() => {
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable;
+      if (isInput) return;
+
+      if ((e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey && userRole !== 'guest') {
+        e.preventDefault();
+        setIsNewLogModalOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, [userRole]);
 
   const handleSelectStudentForReport = (studentId: string) => {
     setReportStudentId(studentId);
@@ -67,8 +96,8 @@ function MainApp() {
         onOpenLoginModal={() => setIsLoginModalOpen(true)}
       />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Main Container - with bottom padding on mobile for MobileBottomNav */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-8">
         {/* Level 1: Public Guest Portal */}
         {(userRole === 'guest' || activeTab === 'portal') && (
           <PublicPortalView onOpenLoginModal={() => setIsLoginModalOpen(true)} />
@@ -160,10 +189,26 @@ function MainApp() {
           isOpen={isLoginModalOpen}
           onClose={() => setIsLoginModalOpen(false)}
         />
+
+        {/* Command Palette (Quick Search Ctrl+K) */}
+        <CommandPalette
+          isOpen={isCommandPaletteOpen}
+          onClose={() => setIsCommandPaletteOpen(false)}
+          onNavigateTab={setActiveTab}
+          onOpenNewLogModal={() => setIsNewLogModalOpen(true)}
+          onSelectStudentForReport={handleSelectStudentForReport}
+        />
       </main>
 
+      {/* Ergonomic Mobile Bottom Nav Bar (Thumb-zone UX) */}
+      <MobileBottomNav
+        activeTab={activeTab}
+        onNavigateTab={setActiveTab}
+        onOpenNewLogModal={() => setIsNewLogModalOpen(true)}
+      />
+
       {/* Footer */}
-      <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-4 text-center text-xs text-slate-500 print:hidden">
+      <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-4 text-center text-xs text-slate-500 print:hidden mb-16 md:mb-0">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>
             Sổ Chấm Điểm Hàng Ngày • Lớp {classConfig.className} • {classConfig.schoolName ? `${classConfig.schoolName} • ` : ''}Niên khóa {classConfig.schoolYear} • GVCN: {classConfig.homeroomTeacher}

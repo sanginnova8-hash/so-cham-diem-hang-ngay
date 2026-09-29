@@ -124,6 +124,20 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Action Buttons & Status */}
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          {/* Quick Search / Command Palette (Ctrl+K) */}
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('open-command-palette'))}
+            className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-800/90 hover:bg-slate-750 text-slate-300 hover:text-white rounded-xl border border-slate-700/80 text-xs transition active:scale-95 cursor-pointer shadow-xs"
+            title="Tìm kiếm nhanh học sinh & chức năng (Ctrl+K hoặc /)"
+          >
+            <Search className="h-3.5 w-3.5 text-blue-400" />
+            <span className="hidden lg:inline text-[11px] text-slate-400">Tìm kiếm...</span>
+            <kbd className="hidden sm:inline-block px-1.5 py-0.5 bg-slate-700/80 text-slate-300 font-mono text-[10px] rounded border border-slate-650">
+              ⌘K
+            </kbd>
+          </button>
+
           {/* Edit Class & Teacher Info Button */}
           {onOpenEditClassTeacherModal && (
             <button

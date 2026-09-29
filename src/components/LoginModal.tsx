@@ -28,6 +28,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
   const {
     userRole,
     activeAccount,
+    isGoogleAuth,
     logout,
     login,
     registerWithGoogle,
@@ -62,21 +63,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
     setLoginLoading(true);
     setLoginError(null);
     try {
-      await login(loginEmail || 'sanginnova8@gmail.com');
+      await login();
       onClose();
     } catch (err: any) {
-      // In case of domain restriction, fallback to instant access
-      try {
-        await registerQuickOneTouch({
-          displayName: 'Thầy Trần Văn Sang',
-          emailOrUsername: loginEmail || 'sanginnova8@gmail.com',
-          className: 'Lớp 10A8',
-          department: 'Khoa Điện - Điện tử',
-        });
-        onClose();
-      } catch (e: any) {
-        setLoginError(e?.message || 'Đăng nhập không thành công');
-      }
+      console.warn('Google login error:', err);
+      setLoginError(
+        err?.message ||
+          'Không thể hoàn tất đăng nhập Google OAuth. Thầy cô có thể đăng nhập bằng Tên đăng nhập & Mật khẩu bên dưới (sanginnova / Baotran2010).'
+      );
     } finally {
       setLoginLoading(false);
     }
@@ -88,30 +82,18 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
     try {
       await registerWithGoogle(
         regClassName || 'Lớp Mới K46',
-        regDepartment,
-        regEmail || 'sanginnova8@gmail.com'
+        regDepartment
       );
       setRegSuccess(true);
       setTimeout(() => {
         onClose();
       }, 900);
     } catch (err: any) {
-      // If popup or domain error occurs, seamlessly create account via registerQuickOneTouch
-      try {
-        await registerQuickOneTouch({
-          displayName: regName || 'Thầy Trần Văn Sang',
-          emailOrUsername: regEmail || 'sanginnova8@gmail.com',
-          className: regClassName || 'Lớp Mới K46',
-          department: regDepartment,
-          phone: regPhone,
-        });
-        setRegSuccess(true);
-        setTimeout(() => {
-          onClose();
-        }, 900);
-      } catch (fallbackErr: any) {
-        setRegError(fallbackErr?.message || 'Đăng ký nhanh không thành công. Vui lòng thử lại.');
-      }
+      console.warn('Google register error:', err);
+      setRegError(
+        err?.message ||
+          'Không thể hoàn tất đăng ký Google OAuth. Thầy cô vui lòng sử dụng biểu mẫu Đăng ký bằng Tên đăng nhập & Mật khẩu bên dưới.'
+      );
     } finally {
       setRegLoading(false);
     }
@@ -231,13 +213,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                   <UserCheck className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="font-bold text-sm text-slate-900 dark:text-white">
                       {activeAccount?.displayName || 'Tài khoản đang đăng nhập'}
                     </h4>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-200 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
-                      {userRole === 'admin' ? 'Quản trị' : 'Giáo viên'}
+                      {userRole === 'admin' ? 'Quản trị viên' : 'Giáo viên'}
                     </span>
+                    {isGoogleAuth ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                        <span>● Google OAuth Thật</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                        <span>● Tài khoản Nội bộ (Mật khẩu)</span>
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-600 dark:text-slate-300">
                     {activeAccount?.assignedClassName || 'Lớp chủ nhiệm'} • {activeAccount?.email || activeAccount?.username || 'Đang hoạt động'}
@@ -327,6 +318,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
               </svg>
               <span>Đăng nhập nhanh bằng Google</span>
             </button>
+
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center leading-relaxed">
+              * Trong môi trường Cloud Run / iframe xem trước, nếu pop-up Google bị chặn, thầy cô có thể đăng nhập bằng Tên đăng nhập & Mật khẩu bên dưới (hoặc dùng tài khoản Quản trị <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">sanginnova</span> / <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">Baotran2010</span>).
+            </p>
 
             <div className="relative flex py-1 items-center">
               <div className="flex-grow border-t border-slate-200 dark:border-slate-700" />
