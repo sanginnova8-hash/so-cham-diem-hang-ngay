@@ -22,6 +22,7 @@ import {
   UserX,
   FileSpreadsheet,
   X,
+  PlusCircle,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { UserAccount, SchoolClass, UserRole } from '../types';
@@ -45,12 +46,26 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
     deleteUserAccount,
     addUserAccount,
     exportFullBackupJson,
+    deleteSchoolClass,
+    purgeOrphanedClasses,
+    addSchoolClass,
   } = useApp();
 
   const [activeAdminSubTab, setActiveAdminSubTab] = useState<'ranking' | 'teachers' | 'locking' | 'system'>('ranking');
   const [teacherSearch, setTeacherSearch] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteFeedback, setDeleteFeedback] = useState<string | null>(null);
+  const [confirmDeleteClassId, setConfirmDeleteClassId] = useState<string | null>(null);
+  const [classFeedback, setClassFeedback] = useState<string | null>(null);
+
+  // Add class modal state
+  const [isAddClassModalOpen, setIsAddClassModalOpen] = useState(false);
+  const [newClassForm, setNewClassForm] = useState({
+    className: '',
+    department: 'Khoa Điện - Điện tử',
+    schoolYear: '2025 - 2026',
+    teacherId: '',
+  });
 
   // Password reset modal state
   const [resetModalInfo, setResetModalInfo] = useState<{ open: boolean; userName: string; tempPass: string }>({
@@ -121,6 +136,51 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
       phone: '',
       isActive: true,
     });
+  };
+
+  const handleCreateClass = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClassForm.className.trim()) return;
+
+    const classId = 'cls_' + Date.now();
+    const assignedTeacher = userAccounts.find((u) => u.uid === newClassForm.teacherId);
+
+    const newClassItem: SchoolClass = {
+      id: classId,
+      className: newClassForm.className.trim(),
+      department: newClassForm.department.trim() || 'Khoa Điện - Điện tử',
+      schoolYear: newClassForm.schoolYear || '2025 - 2026',
+      teacherId: assignedTeacher ? assignedTeacher.uid : 'admin_sanginnova',
+      teacherName: assignedTeacher ? assignedTeacher.displayName : 'Thầy Trần Văn Sang',
+      teacherEmail: assignedTeacher ? assignedTeacher.email : 'sanginnova8@gmail.com',
+      studentCount: 0,
+      averageScore: 10,
+      topRankCount: 0,
+      violationCount: 0,
+    };
+
+    addSchoolClass(newClassItem);
+
+    if (assignedTeacher) {
+      updateUserAccount(assignedTeacher.uid, {
+        assignedClassId: classId,
+        assignedClassName: newClassItem.className,
+      });
+    }
+
+    setIsAddClassModalOpen(false);
+    setNewClassForm({
+      className: '',
+      department: 'Khoa Điện - Điện tử',
+      schoolYear: '2025 - 2026',
+      teacherId: '',
+    });
+    setClassFeedback(
+      `Đã tạo thành công lớp "${newClassItem.className}"${
+        assignedTeacher ? ` và phân công cho ${assignedTeacher.displayName}` : ''
+      }!`
+    );
+    setTimeout(() => setClassFeedback(null), 4000);
   };
 
   const handleInspectClass = (cls: SchoolClass) => {
@@ -283,10 +343,58 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                 </p>
               </div>
 
-              <div className="text-xs font-semibold text-slate-500">
-                Năm học: 2025 - 2026
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddClassModalOpen(true)}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                  title="Tạo lớp học mới trong trường và phân công giáo viên chủ nhiệm"
+                >
+                  <PlusCircle className="h-3.5 w-3.5" />
+                  <span>+ Tạo Lớp Mới</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const count = purgeOrphanedClasses();
+                    if (count > 0) {
+                      setClassFeedback(`Đã dọn dẹp và xóa bỏ ${count} lớp học không có giáo viên chủ nhiệm!`);
+                    } else {
+                      setClassFeedback('Tất cả các lớp hiện tại đều đã gắn liền hợp lệ với GVCN.');
+                    }
+                    setTimeout(() => setClassFeedback(null), 4000);
+                  }}
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 text-xs font-semibold rounded-xl border border-rose-200 dark:border-rose-800 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Tự động kiểm tra và xóa bỏ các lớp không có GVCN trong mục Tài khoản & Phân quyền"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+                  <span className="hidden sm:inline">Dọn dẹp lớp không có GVCN</span>
+                  <span className="sm:hidden">Dọn dẹp</span>
+                </button>
+
+                <div className="text-xs font-semibold text-slate-500 hidden md:block">
+                  Năm học: 2025 - 2026
+                </div>
               </div>
             </div>
+
+            {/* Notification feedback banner for classes */}
+            {classFeedback && (
+              <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-2 animate-in fade-in slide-in-from-top-1">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span className="font-semibold">{classFeedback}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setClassFeedback(null)}
+                  className="text-emerald-500 hover:text-emerald-700 text-xs font-bold px-1 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
@@ -300,7 +408,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                     <th className="py-3 px-3 text-center">Điểm TB</th>
                     <th className="py-3 px-3 text-center">Lỗi Vi Phạm</th>
                     <th className="py-3 px-3 text-center">Tỷ Lệ Tốt</th>
-                    <th className="py-3 px-3 text-right">Thao Tác Thanh Tra</th>
+                    <th className="py-3 px-3 text-right">Thao Tác Quản Lý & Thanh Tra</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
@@ -334,18 +442,61 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                           {cls.violationCount}
                         </td>
                         <td className="py-3 px-3 text-center font-mono text-emerald-600 font-bold">
-                          {Math.round((cls.topRankCount / cls.studentCount) * 100)}%
+                          {cls.studentCount > 0
+                            ? `${Math.round((cls.topRankCount / cls.studentCount) * 100)}%`
+                            : '—'}
                         </td>
                         <td className="py-3 px-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleInspectClass(cls)}
-                            className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-semibold rounded-lg border border-purple-200 dark:border-purple-800 transition flex items-center gap-1 ml-auto cursor-pointer"
-                            title="Vào xem chi tiết sổ chấm điểm của lớp này ở Chế độ Thanh tra"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                            <span>Vào kiểm tra sổ</span>
-                          </button>
+                          {confirmDeleteClassId === cls.id ? (
+                            <div className="flex items-center justify-end gap-1.5 animate-in fade-in duration-150">
+                              <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap mr-0.5">
+                                Xóa lớp này?
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  deleteSchoolClass(cls.id);
+                                  setConfirmDeleteClassId(null);
+                                  setClassFeedback(`Đã xóa thành công lớp "${cls.className}" khỏi hệ thống.`);
+                                  setTimeout(() => setClassFeedback(null), 4000);
+                                }}
+                                className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold rounded-lg shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1"
+                                title="Xác nhận xóa vĩnh viễn lớp này"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                                <span>Xóa</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteClassId(null)}
+                                className="px-2 py-1 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-[11px] font-medium rounded-lg transition active:scale-95 cursor-pointer"
+                                title="Hủy thao tác"
+                              >
+                                Hủy
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleInspectClass(cls)}
+                                className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-semibold rounded-lg border border-purple-200 dark:border-purple-800 transition flex items-center gap-1 cursor-pointer"
+                                title="Vào xem chi tiết sổ chấm điểm của lớp này ở Chế độ Thanh tra"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                                <span className="hidden sm:inline">Kiểm tra</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteClassId(cls.id)}
+                                className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                                title={`Xóa lớp ${cls.className}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -801,26 +952,40 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Lớp phụ trách:
                   </label>
-                  <input
-                    type="text"
-                    value={newTeacherForm.assignedClassName}
-                    onChange={(e) => setNewTeacherForm({ ...newTeacherForm, assignedClassName: e.target.value })}
+                  <select
+                    value={newTeacherForm.assignedClassId}
+                    onChange={(e) => {
+                      const selectedClass = schoolClasses.find((c) => c.id === e.target.value);
+                      setNewTeacherForm({
+                        ...newTeacherForm,
+                        assignedClassId: e.target.value,
+                        assignedClassName: selectedClass ? selectedClass.className : e.target.value,
+                        department: selectedClass ? selectedClass.department : newTeacherForm.department,
+                      });
+                    }}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
-                  />
+                  >
+                    {schoolClasses.map((cls) => (
+                      <option key={cls.id} value={cls.id}>
+                        {cls.className} ({cls.department})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Vai trò (Role):
+                  Vai trò & Quyền hạn:
                 </label>
                 <select
                   value={newTeacherForm.role}
                   onChange={(e) => setNewTeacherForm({ ...newTeacherForm, role: e.target.value as UserRole })}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
                 >
-                  <option value="teacher">Giáo viên chủ nhiệm (Teacher)</option>
-                  <option value="admin">Quản trị viên hệ thống (Admin)</option>
+                  <option value="teacher">👨‍🏫 Giáo viên chủ nhiệm (Teacher)</option>
+                  <option value="admin">🛡 Ban Giám Hiệu & QLHSSV (Admin)</option>
+                  <option value="owner">👑 Chủ hệ thống (Owner)</option>
                 </select>
               </div>
 
@@ -828,15 +993,116 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                 <button
                   type="button"
                   onClick={() => setIsAddTeacherModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold"
+                  className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition"
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition cursor-pointer"
                 >
-                  Tạo tài khoản
+                  Tạo tài khoản & Phân công
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD CLASS */}
+      {isAddClassModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-scaleUp">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
+              <h4 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <PlusCircle className="h-5 w-5 text-blue-600" />
+                <span>Tạo Lớp Học Mới</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setIsAddClassModalOpen(false)}
+                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl text-slate-400 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateClass} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Tên lớp chuyên ngành:
+                </label>
+                <input
+                  type="text"
+                  placeholder="vd: Lớp 10A1, May K46, Hàn K46"
+                  value={newClassForm.className}
+                  onChange={(e) => setNewClassForm({ ...newClassForm, className: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Khoa / Bộ môn:
+                  </label>
+                  <input
+                    type="text"
+                    value={newClassForm.department}
+                    onChange={(e) => setNewClassForm({ ...newClassForm, department: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Niên khóa:
+                  </label>
+                  <input
+                    type="text"
+                    value={newClassForm.schoolYear}
+                    onChange={(e) => setNewClassForm({ ...newClassForm, schoolYear: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Phân công GVCN phụ trách:
+                </label>
+                <select
+                  value={newClassForm.teacherId}
+                  onChange={(e) => setNewClassForm({ ...newClassForm, teacherId: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
+                >
+                  <option value="">-- Chọn giáo viên từ danh sách tài khoản --</option>
+                  {userAccounts.map((u) => (
+                    <option key={u.uid} value={u.uid}>
+                      {u.displayName} ({u.email || u.username})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Lớp sẽ được gắn liền với tài khoản của GVCN này. Khi GVCN đăng nhập, hệ thống tự động mở lớp.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setIsAddClassModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition shadow-xs cursor-pointer"
+                >
+                  Tạo Lớp & Phân Công
                 </button>
               </div>
             </form>

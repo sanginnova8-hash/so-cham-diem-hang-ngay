@@ -43,6 +43,7 @@ import {
   getAllUsersFromCloud,
   saveClassToCloud,
   getAllClassesFromCloud,
+  deleteClassFromCloud,
   saveClassConfigToCloud,
   getClassConfigFromCloud,
   saveStudentToCloud,
@@ -113,12 +114,16 @@ interface AppContextType {
   switchAccount: (accountUid: string) => void;
   enterInspectorMode: (classItem: SchoolClass) => void;
   exitInspectorMode: () => void;
+  switchWorkingClass: (classItem: SchoolClass) => void;
   toggleLockPeriod: (periodType: 'week' | 'month', periodValue: number, reason?: string) => void;
   updateUserAccount: (uid: string, updates: Partial<UserAccount>) => void;
   resetUserPassword: (uid: string) => { success: boolean; tempPass: string };
   toggleUserAccountStatus: (uid: string) => void;
   deleteUserAccount: (uid: string) => void;
   addUserAccount: (acc: Omit<UserAccount, 'uid' | 'lastLoginAt'>) => UserAccount;
+  deleteSchoolClass: (classId: string) => void;
+  purgeOrphanedClasses: () => number;
+  addSchoolClass: (cls: SchoolClass) => void;
 
   // Data
   classConfig: ClassConfig;
@@ -209,7 +214,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return INITIAL_USER_ACCOUNTS;
   });
 
-  const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>(INITIAL_SCHOOL_CLASSES);
+  const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>(() => {
+    try {
+      const savedClasses = localStorage.getItem('so_cham_diem_school_classes');
+      if (savedClasses) return JSON.parse(savedClasses);
+    } catch (e) {
+      console.warn('Error reading school classes:', e);
+    }
+    return INITIAL_SCHOOL_CLASSES;
+  });
 
   const [lockedPeriods, setLockedPeriods] = useState<PeriodLockStatus[]>(() => {
     try {
@@ -305,6 +318,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setInspectorModeClass(null);
   };
 
+  const switchWorkingClass = (classItem: SchoolClass) => {
+    setClassConfig((prev) => ({
+      ...prev,
+      className: classItem.className.replace(/^lớp\s+/i, '').trim(),
+      homeroomTeacher: classItem.teacherName,
+      department: classItem.department,
+      schoolYear: classItem.schoolYear,
+    }));
+    setInspectorModeClass(null);
+  };
+
   const toggleLockPeriod = (periodType: 'week' | 'month', periodValue: number, reason?: string) => {
     setLockedPeriods((prev) => {
       const idx = prev.findIndex((p) => p.periodType === periodType && p.periodValue === periodValue);
@@ -354,16 +378,80 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   };
 
-  const deleteUserAccount = (uid: string) => {
-    setUserAccounts((prev) => {
-      const next = prev.filter((acc) => acc.uid !== uid);
-      try {
-        localStorage.setItem('so_cham_diem_user_accounts', JSON.stringify(next));
-      } catch (e) {
-        console.warn('Storage save note:', e);
+  // Helper: Kiểm tra xem một lớp học có gắn liền với bất kỳ tài khoản GVCN nào còn tồn tại hay không
+  const isClassTiedToTeacher = (cls: SchoolClass, users: UserAccount[]): boolean => {
+    return users.some((u) => {
+      if (u.assignedClassId && u.assignedClassId === cls.id) return true;
+      if (cls.teacherId && u.uid === cls.teacherId) return true;
+      if (cls.teacherEmail && u.email && cls.teacherEmail.toLowerCase() === u.email.toLowerCase()) return true;
+      if (u.assignedClassName && cls.className) {
+        const cleanUserClass = u.assignedClassName.toLowerCase().replace(/^lớp\s+/i, '').trim();
+        const cleanSchoolClass = cls.className.toLowerCase().replace(/^lớp\s+/i, '').trim();
+        if (cleanUserClass === cleanSchoolClass) return true;
       }
+      return false;
+    });
+  };
+
+  const addSchoolClass = (cls: SchoolClass) => {
+    setSchoolClasses((prev) => {
+      const next = [...prev, cls];
+      try {
+        localStorage.setItem('so_cham_diem_school_classes', JSON.stringify(next));
+      } catch (e) {}
       return next;
     });
+    saveClassToCloud(cls).catch(() => {});
+  };
+
+  const deleteSchoolClass = (classId: string) => {
+    setSchoolClasses((prev) => {
+      const next = prev.filter((c) => c.id !== classId);
+      try {
+        localStorage.setItem('so_cham_diem_school_classes', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    try {
+      deleteDoc(doc(db, 'classes', classId)).catch((e) => {
+        console.warn('Delete class doc notice:', e);
+      });
+    } catch (e) {}
+  };
+
+  const purgeOrphanedClasses = (): number => {
+    let removedCount = 0;
+    setSchoolClasses((prev) => {
+      const valid = prev.filter((cls) => {
+        const hasTeacher = isClassTiedToTeacher(cls, userAccounts);
+        if (!hasTeacher) {
+          removedCount++;
+          try {
+            deleteDoc(doc(db, 'classes', cls.id)).catch(() => {});
+          } catch (e) {}
+          return false;
+        }
+        return true;
+      });
+
+      try {
+        localStorage.setItem('so_cham_diem_school_classes', JSON.stringify(valid));
+      } catch (e) {}
+      return valid;
+    });
+    return removedCount;
+  };
+
+  const deleteUserAccount = (uid: string) => {
+    const nextUsers = userAccounts.filter((acc) => acc.uid !== uid);
+    setUserAccounts(nextUsers);
+
+    try {
+      localStorage.setItem('so_cham_diem_user_accounts', JSON.stringify(nextUsers));
+    } catch (e) {
+      console.warn('Storage save note:', e);
+    }
 
     try {
       deleteDoc(doc(db, 'users', uid)).catch((err) => {
@@ -372,6 +460,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch (e) {
       console.warn('Error scheduling user delete:', e);
     }
+
+    // Danh sách lớp phải gắn liền với GVCN: Tự động xóa mọi lớp không còn GVCN nào phụ trách
+    setSchoolClasses((prevClasses) => {
+      const validClasses = prevClasses.filter((cls) => {
+        const stillHasTeacher = isClassTiedToTeacher(cls, nextUsers);
+        if (!stillHasTeacher) {
+          try {
+            deleteDoc(doc(db, 'classes', cls.id)).catch(() => {});
+          } catch (e) {}
+          return false; // Xóa lớp mồ côi này khỏi danh sách lớp!
+        }
+        return true;
+      });
+
+      try {
+        localStorage.setItem('so_cham_diem_school_classes', JSON.stringify(validClasses));
+      } catch (e) {}
+      return validClasses;
+    });
 
     if (activeAccount?.uid === uid) {
       loginAsRole('guest');
@@ -438,28 +545,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         await testFirestoreConnection();
         await ensureFirebaseAuth();
 
-        // 1. Sync / Load Classes from Firestore
+        // 1. Sync / Load Users from Firestore
+        const cloudUsers = await getAllUsersFromCloud();
+        const effectiveUsers = cloudUsers && cloudUsers.length > 0 ? cloudUsers : userAccounts;
+        if (cloudUsers && cloudUsers.length > 0) {
+          if (isMounted) setUserAccounts(cloudUsers);
+        } else {
+          await Promise.all(INITIAL_USER_ACCOUNTS.map((u) => saveUserToCloud(u)));
+        }
+
+        // 2. Sync / Load Classes from Firestore (Gắn liền với danh sách GVCN trong mục tài khoản & phân quyền)
         const cloudClasses = await getAllClassesFromCloud();
         if (cloudClasses && cloudClasses.length > 0) {
-          if (isMounted) setSchoolClasses(cloudClasses);
+          const tiedClasses = cloudClasses.filter((c) => isClassTiedToTeacher(c, effectiveUsers));
+          const orphaned = cloudClasses.filter((c) => !isClassTiedToTeacher(c, effectiveUsers));
+          // Tự động xóa các lớp mồ côi khỏi Firestore
+          orphaned.forEach((oc) => deleteClassFromCloud(oc.id));
+          if (isMounted) setSchoolClasses(tiedClasses.length > 0 ? tiedClasses : INITIAL_SCHOOL_CLASSES);
         } else {
           await Promise.all(INITIAL_SCHOOL_CLASSES.map((c) => saveClassToCloud(c)));
         }
 
-        // 2. Sync / Load Period Locks from Firestore
+        // 3. Sync / Load Period Locks from Firestore
         const cloudLocks = await getPeriodLocksFromCloud();
         if (cloudLocks && cloudLocks.length > 0) {
           if (isMounted) setLockedPeriods(cloudLocks);
         } else {
           await Promise.all(INITIAL_LOCKED_PERIODS.map((l) => savePeriodLockToCloud(l)));
-        }
-
-        // 3. Sync / Load Users from Firestore
-        const cloudUsers = await getAllUsersFromCloud();
-        if (cloudUsers && cloudUsers.length > 0) {
-          if (isMounted) setUserAccounts(cloudUsers);
-        } else {
-          await Promise.all(INITIAL_USER_ACCOUNTS.map((u) => saveUserToCloud(u)));
         }
 
         // 4. Sync / Load active teacher's class data from Firestore
@@ -1986,12 +2098,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         switchAccount,
         enterInspectorMode,
         exitInspectorMode,
+        switchWorkingClass,
         toggleLockPeriod,
         updateUserAccount,
         resetUserPassword,
         toggleUserAccountStatus,
         deleteUserAccount,
         addUserAccount,
+        deleteSchoolClass,
+        purgeOrphanedClasses,
+        addSchoolClass,
 
         classConfig,
         students,

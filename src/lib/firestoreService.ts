@@ -103,6 +103,15 @@ export async function getAllClassesFromCloud(): Promise<SchoolClass[]> {
   }
 }
 
+export async function deleteClassFromCloud(classId: string): Promise<void> {
+  const path = `classes/${classId}`;
+  try {
+    await deleteDoc(doc(db, 'classes', classId));
+  } catch (error) {
+    console.warn('Could not delete class from cloud:', error);
+  }
+}
+
 // ======================== CLASS CONFIG ========================
 export async function saveClassConfigToCloud(config: ClassConfig): Promise<void> {
   const path = `classConfigs/${config.id}`;

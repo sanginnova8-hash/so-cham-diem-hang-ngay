@@ -195,7 +195,7 @@ function MainApp() {
           {userRole !== 'guest' && activeTab === 'settings' && <SettingsBackupView />}
 
           {/* Admin Dashboard */}
-          {userRole === 'admin' && activeTab === 'admin' && (
+          {(userRole === 'admin' || userRole === 'owner') && activeTab === 'admin' && (
             <AdminDashboardView onNavigateTab={setActiveTab} />
           )}
 

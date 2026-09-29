@@ -153,8 +153,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
       ],
     },
-    // RBAC: Khối Quản trị độc lập, chỉ Admin mới thấy (Teacher ẩn hoàn toàn)
-    ...(userRole === 'admin'
+    // RBAC: Khối Quản trị độc lập, chỉ Admin / Chủ hệ thống mới thấy (Teacher ẩn hoàn toàn)
+    ...(userRole === 'admin' || userRole === 'owner'
       ? [
           {
             id: 'admin-group',
@@ -370,7 +370,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {activeAccount?.displayName || 'Thầy Sang (GVCN)'}
               </p>
               <p className="text-[10px] text-slate-400 truncate">
-                {userRole === 'admin' ? 'Quản trị viên' : `Lớp ${classConfig.className}`}
+                {userRole === 'owner' ? 'Chủ hệ thống' : userRole === 'admin' ? 'Ban Giám Hiệu' : `Lớp ${classConfig.className}`}
               </p>
             </div>
           )}

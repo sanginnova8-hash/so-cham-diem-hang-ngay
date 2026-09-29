@@ -176,7 +176,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   {activeAccount?.displayName || 'Thầy Sang'}
                 </span>
                 <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
-                  {userRole === 'admin' ? 'Quản trị' : 'GV Chủ nhiệm'}
+                  {userRole === 'owner' ? 'Chủ hệ thống' : userRole === 'admin' ? 'Ban Giám Hiệu' : 'GV Chủ nhiệm'}
                 </span>
               </div>
               <ChevronDown
@@ -199,7 +199,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   </p>
                   <div className="mt-1.5 flex items-center gap-1.5">
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                      {userRole === 'admin' ? 'Quản trị viên' : 'Giáo viên'}
+                      {userRole === 'owner' ? 'Chủ hệ thống' : userRole === 'admin' ? 'Ban Giám Hiệu' : 'Giáo viên'}
                     </span>
                     <span className="text-[10px] text-slate-500 dark:text-slate-400">
                       • Lớp {classConfig.className}

@@ -4,7 +4,7 @@ export type StudentStatus = 'active' | 'inactive';
 
 export type RankLevel = 'Xuất sắc' | 'Tốt' | 'Khá' | 'Trung bình' | 'Yếu';
 
-export type UserRole = 'guest' | 'teacher' | 'admin';
+export type UserRole = 'guest' | 'teacher' | 'admin' | 'owner';
 
 export interface UserAccount {
   uid: string;

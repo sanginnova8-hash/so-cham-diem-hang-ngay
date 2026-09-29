@@ -6,7 +6,7 @@ export const INITIAL_USER_ACCOUNTS: UserAccount[] = [
     email: 'sanginnova8@gmail.com',
     username: 'Sanginnova',
     displayName: 'Thầy Trần Văn Sang',
-    role: 'admin',
+    role: 'owner',
     assignedClassId: '10A8',
     assignedClassName: 'Lớp 10A8 (Điện CN K45)',
     department: 'Khoa Điện - Điện tử',
