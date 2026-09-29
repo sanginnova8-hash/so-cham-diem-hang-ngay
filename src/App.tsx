@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
-import { Navbar, TabType } from './components/Navbar';
+import { TabType } from './components/Navbar';
+import { Sidebar } from './components/Sidebar';
+import { TopBar } from './components/TopBar';
 import { DashboardView } from './components/DashboardView';
 import { DailyLogView } from './components/DailyLogView';
 import { WeeklySummaryView } from './components/WeeklySummaryView';
@@ -20,15 +22,26 @@ import { CommandPalette } from './components/CommandPalette';
 import { MobileBottomNav } from './components/MobileBottomNav';
 
 function MainApp() {
-  const { classConfig, userRole, inspectorModeClass } = useApp();
+  const { classConfig, userRole } = useApp();
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     return userRole === 'guest' ? 'portal' : 'dashboard';
   });
+
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('app_sidebar_collapsed') === 'true';
+  });
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
   const [isNewLogModalOpen, setIsNewLogModalOpen] = useState(false);
   const [isEditClassModalOpen, setIsEditClassModalOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [reportStudentId, setReportStudentId] = useState<string | null>(null);
+
+  // Persist sidebar state
+  useEffect(() => {
+    localStorage.setItem('app_sidebar_collapsed', String(isSidebarCollapsed));
+  }, [isSidebarCollapsed]);
 
   // Sync tab with role transitions
   useEffect(() => {
@@ -83,141 +96,159 @@ function MainApp() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
-      {/* Sticky Inspector Banner for Administrator */}
-      <InspectorBanner onNavigateTab={setActiveTab} />
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex font-sans selection:bg-blue-600 selection:text-white">
+      {/* ── LEFT COLUMN: Professional Collapsible Sidebar ── */}
+      {userRole !== 'guest' && (
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          isOpenMobile={isMobileSidebarOpen}
+          setIsOpenMobile={setIsMobileSidebarOpen}
+          isCollapsed={isSidebarCollapsed}
+          setIsCollapsed={setIsSidebarCollapsed}
+          onOpenEditClassTeacherModal={() => setIsEditClassModalOpen(true)}
+          onOpenLoginModal={() => setIsLoginModalOpen(true)}
+        />
+      )}
 
-      {/* Top Navigation */}
-      <Navbar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onOpenNewLogModal={() => setIsNewLogModalOpen(true)}
-        onOpenEditClassTeacherModal={() => setIsEditClassModalOpen(true)}
-        onOpenLoginModal={() => setIsLoginModalOpen(true)}
-      />
+      {/* ── RIGHT COLUMN: TopBar + Main Views + Footer ── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+        {/* Sticky Inspector Banner for Administrator */}
+        <InspectorBanner onNavigateTab={setActiveTab} />
 
-      {/* Main Container - with bottom padding on mobile for MobileBottomNav */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-8">
-        {/* Level 1: Public Guest Portal */}
-        {(userRole === 'guest' || activeTab === 'portal') && (
-          <PublicPortalView onOpenLoginModal={() => setIsLoginModalOpen(true)} />
-        )}
+        {/* Top Header Bar */}
+        <TopBar
+          activeTab={activeTab}
+          onOpenNewLogModal={() => setIsNewLogModalOpen(true)}
+          onOpenEditClassTeacherModal={() => setIsEditClassModalOpen(true)}
+          onOpenLoginModal={() => setIsLoginModalOpen(true)}
+          onToggleMobileSidebar={() => setIsMobileSidebarOpen(true)}
+          onNavigateTab={setActiveTab}
+        />
 
-        {/* Level 2 & 3: Professional Views */}
-        {userRole !== 'guest' && activeTab === 'dashboard' && (
-          <DashboardView
+        {/* Main Content Area */}
+        <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-5 pb-24 md:pb-8">
+          {/* Level 1: Public Guest Portal */}
+          {(userRole === 'guest' || activeTab === 'portal') && (
+            <PublicPortalView onOpenLoginModal={() => setIsLoginModalOpen(true)} />
+          )}
+
+          {/* Level 2 & 3: Professional Views */}
+          {userRole !== 'guest' && activeTab === 'dashboard' && (
+            <DashboardView
+              onNavigateTab={setActiveTab}
+              onSelectStudentForReport={handleSelectStudentForReport}
+              onOpenNewLogModal={() => setIsNewLogModalOpen(true)}
+              onOpenEditClassTeacherModal={() => setIsEditClassModalOpen(true)}
+            />
+          )}
+
+          {userRole !== 'guest' && activeTab === 'daily-log' && (
+            <DailyLogView
+              isModalOpen={isNewLogModalOpen}
+              onCloseModal={() => setIsNewLogModalOpen(false)}
+              onOpenModal={() => setIsNewLogModalOpen(true)}
+            />
+          )}
+
+          {userRole !== 'guest' && activeTab === 'weekly' && (
+            <WeeklySummaryView
+              onNavigateTab={setActiveTab}
+              onSelectStudentForReport={handleSelectStudentForReport}
+            />
+          )}
+
+          {userRole !== 'guest' && activeTab === 'monthly' && (
+            <MonthlySummaryView
+              onNavigateTab={setActiveTab}
+              onSelectStudentForReport={handleSelectStudentForReport}
+            />
+          )}
+
+          {userRole !== 'guest' && activeTab === 'semester' && (
+            <SemesterView
+              onNavigateTab={setActiveTab}
+              onSelectStudentForReport={handleSelectStudentForReport}
+            />
+          )}
+
+          {userRole !== 'guest' && activeTab === 'students' && (
+            <StudentsView
+              onNavigateTab={setActiveTab}
+              onSelectStudentForReport={handleSelectStudentForReport}
+            />
+          )}
+
+          {userRole !== 'guest' && activeTab === 'categories' && <BehaviorCatalogView />}
+
+          {userRole !== 'guest' && activeTab === 'parent-report' && (
+            <ParentReportView initialSelectedStudentId={reportStudentId} />
+          )}
+
+          {userRole !== 'guest' && activeTab === 'zalo-composer' && (
+            <ZaloMessageComposerView
+              initialStudentId={reportStudentId}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {userRole !== 'guest' && activeTab === 'settings' && <SettingsBackupView />}
+
+          {/* Admin Dashboard */}
+          {userRole === 'admin' && activeTab === 'admin' && (
+            <AdminDashboardView onNavigateTab={setActiveTab} />
+          )}
+
+          {/* Global modal for quick log if opened from other views */}
+          {userRole !== 'guest' && activeTab !== 'daily-log' && isNewLogModalOpen && (
+            <DailyLogView
+              isModalOpen={isNewLogModalOpen}
+              onCloseModal={() => setIsNewLogModalOpen(false)}
+              onOpenModal={() => setIsNewLogModalOpen(true)}
+            />
+          )}
+
+          {/* Global Modal for Teacher and Class Settings */}
+          <EditClassTeacherModal
+            isOpen={isEditClassModalOpen}
+            onClose={() => setIsEditClassModalOpen(false)}
+          />
+
+          {/* Global RBAC Login & Role Switcher Modal */}
+          <LoginModal
+            isOpen={isLoginModalOpen}
+            onClose={() => setIsLoginModalOpen(false)}
+          />
+
+          {/* Command Palette (Quick Search Ctrl+K) */}
+          <CommandPalette
+            isOpen={isCommandPaletteOpen}
+            onClose={() => setIsCommandPaletteOpen(false)}
             onNavigateTab={setActiveTab}
-            onSelectStudentForReport={handleSelectStudentForReport}
             onOpenNewLogModal={() => setIsNewLogModalOpen(true)}
-            onOpenEditClassTeacherModal={() => setIsEditClassModalOpen(true)}
-          />
-        )}
-
-        {userRole !== 'guest' && activeTab === 'daily-log' && (
-          <DailyLogView
-            isModalOpen={isNewLogModalOpen}
-            onCloseModal={() => setIsNewLogModalOpen(false)}
-            onOpenModal={() => setIsNewLogModalOpen(true)}
-          />
-        )}
-
-        {userRole !== 'guest' && activeTab === 'weekly' && (
-          <WeeklySummaryView
-            onNavigateTab={setActiveTab}
             onSelectStudentForReport={handleSelectStudentForReport}
           />
-        )}
+        </main>
 
-        {userRole !== 'guest' && activeTab === 'monthly' && (
-          <MonthlySummaryView
-            onNavigateTab={setActiveTab}
-            onSelectStudentForReport={handleSelectStudentForReport}
-          />
-        )}
-
-        {userRole !== 'guest' && activeTab === 'semester' && (
-          <SemesterView
-            onNavigateTab={setActiveTab}
-            onSelectStudentForReport={handleSelectStudentForReport}
-          />
-        )}
-
-        {userRole !== 'guest' && activeTab === 'students' && (
-          <StudentsView
-            onNavigateTab={setActiveTab}
-            onSelectStudentForReport={handleSelectStudentForReport}
-          />
-        )}
-
-        {userRole !== 'guest' && activeTab === 'categories' && <BehaviorCatalogView />}
-
-        {userRole !== 'guest' && activeTab === 'parent-report' && (
-          <ParentReportView initialSelectedStudentId={reportStudentId} />
-        )}
-
-        {userRole !== 'guest' && activeTab === 'zalo-composer' && (
-          <ZaloMessageComposerView
-            initialStudentId={reportStudentId}
-            onNavigateTab={setActiveTab}
-          />
-        )}
-
-        {userRole !== 'guest' && activeTab === 'settings' && <SettingsBackupView />}
-
-        {/* Level 3: Admin Dashboard View */}
-        {userRole === 'admin' && activeTab === 'admin' && (
-          <AdminDashboardView onNavigateTab={setActiveTab} />
-        )}
-
-        {/* Global modal support for DailyLogView if opened from other tabs */}
-        {userRole !== 'guest' && activeTab !== 'daily-log' && isNewLogModalOpen && (
-          <DailyLogView
-            isModalOpen={isNewLogModalOpen}
-            onCloseModal={() => setIsNewLogModalOpen(false)}
-            onOpenModal={() => setIsNewLogModalOpen(true)}
-          />
-        )}
-
-        {/* Global Modal for Teacher and Class Settings */}
-        <EditClassTeacherModal
-          isOpen={isEditClassModalOpen}
-          onClose={() => setIsEditClassModalOpen(false)}
-        />
-
-        {/* Global RBAC Login & Role Switcher Modal */}
-        <LoginModal
-          isOpen={isLoginModalOpen}
-          onClose={() => setIsLoginModalOpen(false)}
-        />
-
-        {/* Command Palette (Quick Search Ctrl+K) */}
-        <CommandPalette
-          isOpen={isCommandPaletteOpen}
-          onClose={() => setIsCommandPaletteOpen(false)}
+        {/* Ergonomic Mobile Bottom Nav Bar (Thumb-zone UX) */}
+        <MobileBottomNav
+          activeTab={activeTab}
           onNavigateTab={setActiveTab}
           onOpenNewLogModal={() => setIsNewLogModalOpen(true)}
-          onSelectStudentForReport={handleSelectStudentForReport}
         />
-      </main>
 
-      {/* Ergonomic Mobile Bottom Nav Bar (Thumb-zone UX) */}
-      <MobileBottomNav
-        activeTab={activeTab}
-        onNavigateTab={setActiveTab}
-        onOpenNewLogModal={() => setIsNewLogModalOpen(true)}
-      />
-
-      {/* Footer */}
-      <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-4 text-center text-xs text-slate-500 print:hidden mb-16 md:mb-0">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>
-            Sổ Chấm Điểm Hàng Ngày • Lớp {classConfig.className} • {classConfig.schoolName ? `${classConfig.schoolName} • ` : ''}Niên khóa {classConfig.schoolYear} • GVCN: {classConfig.homeroomTeacher}
-          </span>
-          <span className="text-slate-400">
-            Hệ thống hỗ trợ nề nếp & thi đua chuẩn hóa dành cho trường học
-          </span>
-        </div>
-      </footer>
+        {/* Clean Footer */}
+        <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-3.5 text-center text-xs text-slate-500 print:hidden mb-16 md:mb-0">
+          <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <span>
+              Sổ Chấm Điểm Hàng Ngày • Lớp {classConfig.className} • {classConfig.schoolName ? `${classConfig.schoolName} • ` : ''}Niên khóa {classConfig.schoolYear} • GVCN: {classConfig.homeroomTeacher}
+            </span>
+            <span className="text-slate-400">
+              Hệ thống quản lý nề nếp & thi đua học sinh chuyên nghiệp
+            </span>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }

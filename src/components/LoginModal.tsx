@@ -69,7 +69,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
       console.warn('Google login error:', err);
       setLoginError(
         err?.message ||
-          'Không thể hoàn tất đăng nhập Google OAuth. Thầy cô có thể đăng nhập bằng Tên đăng nhập & Mật khẩu bên dưới (sanginnova / Baotran2010).'
+          'Không thể hoàn tất đăng nhập Google OAuth. Thầy cô vui lòng kiểm tra lại quyền truy cập hoặc đăng nhập bằng Tên đăng nhập & Mật khẩu bên dưới.'
       );
     } finally {
       setLoginLoading(false);
@@ -100,22 +100,26 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
   };
 
   const handleQuickOneTouchRegister = async () => {
+    if (!regName.trim() || !regEmail.trim() || !regClassName.trim()) {
+      setRegError('Vui lòng điền đủ: Họ tên giáo viên, Tên đăng nhập/Email và Tên lớp chủ nhiệm');
+      return;
+    }
     setRegLoading(true);
     setRegError(null);
     try {
       await registerQuickOneTouch({
-        displayName: regName || 'Thầy Trần Văn Sang',
-        emailOrUsername: regEmail || 'sanginnova8@gmail.com',
-        className: regClassName || 'Lớp Điện CN K46',
-        department: regDepartment,
-        phone: regPhone,
+        displayName: regName.trim(),
+        emailOrUsername: regEmail.trim(),
+        className: regClassName.trim(),
+        department: regDepartment.trim(),
+        phone: regPhone.trim(),
       });
       setRegSuccess(true);
       setTimeout(() => {
         onClose();
       }, 900);
     } catch (err: any) {
-      setRegError(err?.message || 'Khởi tạo 1 chạm thất bại. Vui lòng thử lại.');
+      setRegError(err?.message || 'Khởi tạo tài khoản thất bại. Vui lòng thử lại.');
     } finally {
       setRegLoading(false);
     }
@@ -318,10 +322,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
               </svg>
               <span>Đăng nhập nhanh bằng Google</span>
             </button>
-
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center leading-relaxed">
-              * Trong môi trường Cloud Run / iframe xem trước, nếu pop-up Google bị chặn, thầy cô có thể đăng nhập bằng Tên đăng nhập & Mật khẩu bên dưới (hoặc dùng tài khoản Quản trị <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">sanginnova</span> / <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">Baotran2010</span>).
-            </p>
 
             <div className="relative flex py-1 items-center">
               <div className="flex-grow border-t border-slate-200 dark:border-slate-700" />

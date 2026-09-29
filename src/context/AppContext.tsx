@@ -355,7 +355,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const deleteUserAccount = (uid: string) => {
-    setUserAccounts((prev) => prev.filter((acc) => acc.uid !== uid));
+    setUserAccounts((prev) => {
+      const next = prev.filter((acc) => acc.uid !== uid);
+      try {
+        localStorage.setItem('so_cham_diem_user_accounts', JSON.stringify(next));
+      } catch (e) {
+        console.warn('Storage save note:', e);
+      }
+      return next;
+    });
+
+    try {
+      deleteDoc(doc(db, 'users', uid)).catch((err) => {
+        console.warn('Firestore user delete notice:', err);
+      });
+    } catch (e) {
+      console.warn('Error scheduling user delete:', e);
+    }
+
     if (activeAccount?.uid === uid) {
       loginAsRole('guest');
     }
@@ -601,10 +618,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsCloudSyncing(true);
     try {
       await ensureFirebaseAuth();
-      const teacherName = params.displayName?.trim() || 'Thầy Trần Văn Sang';
-      const className = params.className?.trim() || 'Lớp 10A8';
-      const department = params.department || 'Khoa Điện - Điện tử';
-      const emailInput = params.emailOrUsername?.trim() || 'sanginnova8@gmail.com';
+      const teacherName = params.displayName?.trim() || 'Giáo viên';
+      const className = params.className?.trim() || 'Lớp Chủ nhiệm';
+      const department = params.department || 'Khoa Chuyên ngành';
+      const emailInput = params.emailOrUsername?.trim() || `gv_${Date.now()}@cdnghe01bqp.edu.vn`;
       const isEmail = emailInput.includes('@');
       const username = isEmail ? emailInput.split('@')[0] : emailInput;
       const effectiveEmail = isEmail ? emailInput : `${username.toLowerCase()}@cdnghe01bqp.edu.vn`;
@@ -694,7 +711,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       console.warn('Google login error detail:', err);
       if (err?.code === 'auth/unauthorized-domain' || err?.message?.includes('unauthorized-domain')) {
         throw new Error(
-          'Tên miền hiện tại (Cloud Run preview) chưa được cấp quyền trong Firebase Console (mã lỗi auth/unauthorized-domain). Thầy cô vui lòng sử dụng tài khoản Quản trị viên / Giáo viên (Tên: sanginnova / Mật khẩu: Baotran2010) để đăng nhập ngay!'
+          'Tên miền này chưa được cấp phép trong Firebase Console (auth/unauthorized-domain). Quản trị viên vui lòng thêm tên miền này vào mục Authentication > Settings > Authorized domains trên Firebase Console, hoặc thầy cô vui lòng đăng nhập bằng Tên đăng nhập & Mật khẩu.'
         );
       } else if (err?.code === 'auth/popup-blocked' || err?.message?.includes('popup-blocked')) {
         throw new Error(

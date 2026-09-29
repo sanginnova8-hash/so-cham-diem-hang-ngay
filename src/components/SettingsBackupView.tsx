@@ -395,7 +395,7 @@ export const SettingsBackupView: React.FC = () => {
                       type="email"
                       value={teacherEmail}
                       onChange={(e) => setTeacherEmail(e.target.value)}
-                      placeholder="Ví dụ: sanginnova8@gmail.com"
+                      placeholder="Ví dụ: giaovien@gmail.com"
                       className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-medium focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
