@@ -1216,6 +1216,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setActiveAccount(null);
       setInspectorModeClass(null);
       setIsLocalMode(true);
+      try {
+        localStorage.removeItem('so_cham_diem_active_uid');
+        localStorage.setItem('so_cham_diem_user_role', 'guest');
+      } catch (e) {}
     }
   };
 

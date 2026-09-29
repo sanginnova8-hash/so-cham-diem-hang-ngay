@@ -12,6 +12,7 @@ import {
   Settings,
   LogOut,
   Sparkles,
+  LogIn,
 } from 'lucide-react';
 import { TabType } from './Navbar';
 import { useApp } from '../context/AppContext';
@@ -160,112 +161,124 @@ export const TopBar: React.FC<TopBarProps> = ({
 
           <PWAInstallButton />
 
-          {/* User Profile Menu */}
-          <div className="relative" ref={profileRef}>
-            <button
-              type="button"
-              onClick={() => setIsProfileOpen(!isProfileOpen)}
-              className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 transition active:scale-95 cursor-pointer text-xs"
-              title="Thông tin tài khoản & tùy chọn"
-            >
-              <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
-                {(activeAccount?.displayName || currentUser?.displayName || 'GV').charAt(0).toUpperCase()}
-              </div>
-              <div className="hidden lg:flex flex-col text-left">
-                <span className="text-xs font-bold text-slate-800 dark:text-white truncate max-w-[120px] leading-tight">
-                  {activeAccount?.displayName || 'Thầy Sang'}
-                </span>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
-                  {userRole === 'owner' ? 'Chủ hệ thống' : userRole === 'admin' ? 'Ban Giám Hiệu' : 'GV Chủ nhiệm'}
-                </span>
-              </div>
-              <ChevronDown
-                className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
-                  isProfileOpen ? 'rotate-180' : ''
-                }`}
-              />
-            </button>
+          {/* User Profile Menu or Login Button */}
+          {activeAccount && userRole !== 'guest' ? (
+            <div className="relative" ref={profileRef}>
+              <button
+                type="button"
+                onClick={() => setIsProfileOpen(!isProfileOpen)}
+                className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 transition active:scale-95 cursor-pointer text-xs"
+                title="Thông tin tài khoản & tùy chọn"
+              >
+                <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                  {activeAccount.displayName.charAt(0).toUpperCase()}
+                </div>
+                <div className="hidden lg:flex flex-col text-left">
+                  <span className="text-xs font-bold text-slate-800 dark:text-white truncate max-w-[120px] leading-tight">
+                    {activeAccount.displayName}
+                  </span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
+                    {userRole === 'owner' ? 'Chủ hệ thống' : userRole === 'admin' ? 'Ban Giám Hiệu' : 'GV Chủ nhiệm'}
+                  </span>
+                </div>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
+                    isProfileOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
 
-            {/* Profile Dropdown Popover */}
-            {isProfileOpen && (
-              <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-750 rounded-2xl shadow-xl py-2 z-50 text-xs animate-in fade-in slide-in-from-top-2 duration-150">
-                {/* Header */}
-                <div className="px-3.5 py-2.5 border-b border-slate-100 dark:border-slate-800">
-                  <p className="font-bold text-slate-900 dark:text-white text-sm">
-                    {activeAccount?.displayName || 'Thầy Trần Văn Sang'}
-                  </p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {activeAccount?.email || activeAccount?.username || 'sanginnova'}
-                  </p>
-                  <div className="mt-1.5 flex items-center gap-1.5">
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                      {userRole === 'owner' ? 'Chủ hệ thống' : userRole === 'admin' ? 'Ban Giám Hiệu' : 'Giáo viên'}
-                    </span>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                      • Lớp {classConfig.className}
-                    </span>
+              {/* Profile Dropdown Popover */}
+              {isProfileOpen && (
+                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-750 rounded-2xl shadow-xl py-2 z-50 text-xs animate-in fade-in slide-in-from-top-2 duration-150">
+                  {/* Header */}
+                  <div className="px-3.5 py-2.5 border-b border-slate-100 dark:border-slate-800">
+                    <p className="font-bold text-slate-900 dark:text-white text-sm truncate">
+                      {activeAccount.displayName}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                      {activeAccount.email || activeAccount.username}
+                    </p>
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                        {userRole === 'owner' ? '👑 Chủ hệ thống' : userRole === 'admin' ? '🛡 Ban Giám Hiệu' : '👨‍🏫 Giáo viên'}
+                      </span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                        • Lớp {classConfig.className}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Menu items */}
+                  <div className="py-1">
+                    {onOpenEditClassTeacherModal && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileOpen(false);
+                          onOpenEditClassTeacherModal();
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-200 flex items-center gap-2.5 transition cursor-pointer"
+                      >
+                        <UserCog className="h-4 w-4 text-blue-500" />
+                        <span>Đổi thông tin GV & Lớp học</span>
+                      </button>
+                    )}
+
+                    {onOpenLoginModal && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileOpen(false);
+                          onOpenLoginModal();
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-200 flex items-center gap-2.5 transition cursor-pointer"
+                      >
+                        <UserCheck className="h-4 w-4 text-indigo-500" />
+                        <span>Quản lý tài khoản & Phiên làm việc</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProfileOpen(false);
+                        onNavigateTab('settings');
+                      }}
+                      className="w-full text-left px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-200 flex items-center gap-2.5 transition cursor-pointer"
+                    >
+                      <Settings className="h-4 w-4 text-slate-400" />
+                      <span>Cài đặt & Sao lưu dữ liệu</span>
+                    </button>
+                  </div>
+
+                  <div className="border-t border-slate-100 dark:border-slate-800 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProfileOpen(false);
+                        logout();
+                      }}
+                      className="w-full text-left px-3.5 py-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center gap-2.5 transition cursor-pointer font-bold uppercase tracking-wide"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      <span>ĐĂNG XUẤT</span>
+                    </button>
                   </div>
                 </div>
-
-                {/* Menu items */}
-                <div className="py-1">
-                  {onOpenEditClassTeacherModal && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileOpen(false);
-                        onOpenEditClassTeacherModal();
-                      }}
-                      className="w-full text-left px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-200 flex items-center gap-2.5 transition cursor-pointer"
-                    >
-                      <UserCog className="h-4 w-4 text-blue-500" />
-                      <span>Đổi thông tin GV & Lớp học</span>
-                    </button>
-                  )}
-
-                  {onOpenLoginModal && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileOpen(false);
-                        onOpenLoginModal();
-                      }}
-                      className="w-full text-left px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-200 flex items-center gap-2.5 transition cursor-pointer"
-                    >
-                      <UserCheck className="h-4 w-4 text-indigo-500" />
-                      <span>Quản lý tài khoản & Đăng nhập</span>
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsProfileOpen(false);
-                      onNavigateTab('settings');
-                    }}
-                    className="w-full text-left px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-200 flex items-center gap-2.5 transition cursor-pointer"
-                  >
-                    <Settings className="h-4 w-4 text-slate-400" />
-                    <span>Cài đặt & Sao lưu dữ liệu</span>
-                  </button>
-                </div>
-
-                <div className="border-t border-slate-100 dark:border-slate-800 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsProfileOpen(false);
-                      logout();
-                    }}
-                    className="w-full text-left px-3.5 py-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center gap-2.5 transition cursor-pointer font-medium"
-                  >
-                    <LogOut className="h-4 w-4" />
-                    <span>Đăng xuất</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenLoginModal}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition active:scale-95 cursor-pointer"
+              title="Đăng nhập tài khoản giáo viên hoặc quản trị"
+            >
+              <LogIn className="h-4 w-4" />
+              <span>Đăng nhập</span>
+            </button>
+          )}
         </div>
       </div>
     </header>

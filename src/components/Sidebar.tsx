@@ -22,6 +22,7 @@ import {
   LogOut,
   UserCog,
   SlidersHorizontal,
+  LogIn,
 } from 'lucide-react';
 import { TabType } from './Navbar';
 import { useApp } from '../context/AppContext';
@@ -354,27 +355,51 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* ── Bottom Section: Profile Card & Collapse Toggle ── */}
       <div className="p-3 border-t border-slate-800 space-y-2 shrink-0">
         {/* User Card */}
-        <div
-          onClick={onOpenLoginModal}
-          className={`flex items-center gap-3 p-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 cursor-pointer transition ${
-            isCollapsed && !isOpenMobile ? 'justify-center p-2' : ''
-          }`}
-          title="Bấm để xem tài khoản & đăng nhập"
-        >
-          <div className="h-8 w-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
-            {(activeAccount?.displayName || currentUser?.displayName || 'GV').charAt(0).toUpperCase()}
-          </div>
-          {(!isCollapsed || isOpenMobile) && (
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-white truncate leading-tight">
-                {activeAccount?.displayName || 'Thầy Sang (GVCN)'}
-              </p>
-              <p className="text-[10px] text-slate-400 truncate">
-                {userRole === 'owner' ? 'Chủ hệ thống' : userRole === 'admin' ? 'Ban Giám Hiệu' : `Lớp ${classConfig.className}`}
-              </p>
+        {activeAccount && userRole !== 'guest' ? (
+          <div
+            onClick={onOpenLoginModal}
+            className={`flex items-center gap-3 p-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 cursor-pointer transition ${
+              isCollapsed && !isOpenMobile ? 'justify-center p-2' : ''
+            }`}
+            title="Bấm để xem thông tin tài khoản"
+          >
+            <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+              {activeAccount.displayName.charAt(0).toUpperCase()}
             </div>
-          )}
-        </div>
+            {(!isCollapsed || isOpenMobile) && (
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-white truncate leading-tight">
+                  {activeAccount.displayName}
+                </p>
+                <p className="text-[10px] text-slate-400 truncate">
+                  {userRole === 'owner' ? 'Chủ hệ thống' : userRole === 'admin' ? 'Ban Giám Hiệu' : `Lớp ${classConfig.className}`}
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            onClick={onOpenLoginModal}
+            className={`flex items-center gap-3 p-2 rounded-xl bg-blue-900/30 hover:bg-blue-900/50 border border-blue-500/30 cursor-pointer transition ${
+              isCollapsed && !isOpenMobile ? 'justify-center p-2' : ''
+            }`}
+            title="Bấm để đăng nhập hệ thống"
+          >
+            <div className="h-8 w-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+              <LogIn className="h-4 w-4" />
+            </div>
+            {(!isCollapsed || isOpenMobile) && (
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-blue-400 truncate leading-tight">
+                  Đăng nhập
+                </p>
+                <p className="text-[10px] text-slate-400 truncate">
+                  Giáo viên & Quản trị
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Desktop Collapse/Expand Button */}
         <button
