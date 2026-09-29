@@ -26,6 +26,7 @@ import {
   Search,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export type TabType =
   | 'portal'
@@ -147,6 +148,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Thêm ghi nhận</span>
             </button>
           )}
+
+          {/* Mobile App Install Button */}
+          <PWAInstallButton />
 
           {/* Account Profile Button */}
           {onOpenLoginModal && (

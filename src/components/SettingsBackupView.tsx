@@ -31,8 +31,10 @@ import {
   Users,
   Sliders,
   Sparkles,
+  Smartphone,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { PWAInstallButton } from './PWAInstallButton';
 import { formatVietnameseDate, formatVietnameseNumber } from '../lib/utils';
 import { BehaviorCategory, AchievementBonusRule } from '../types';
 
@@ -955,6 +957,31 @@ export const SettingsBackupView: React.FC = () => {
               <Upload className="h-4 w-4" />
               <span>Chọn tệp sao lưu JSON để nạp</span>
             </button>
+          </div>
+
+          {/* Mobile App Installation Card */}
+          <div className="md:col-span-2 bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 dark:from-slate-800 dark:via-purple-950/30 dark:to-slate-800 p-5 rounded-2xl border border-purple-200 dark:border-purple-800/50 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-purple-600/30">
+                <Smartphone className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Cài Đặt Sổ Nề Nếp Thành Mobile App (iOS / Android)
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-200 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300">
+                    PWA Chuẩn
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 max-w-xl leading-relaxed">
+                  Ứng dụng đã hỗ trợ công nghệ Progressive Web App (PWA). Giáo viên có thể cài trực tiếp lên màn hình điện thoại iPhone (Safari) hoặc Android (Chrome/Cốc Cốc) để mở nhanh như ứng dụng gốc, lưu ngoại tuyến và đồng bộ tự động với CSDL Cloud.
+                </p>
+              </div>
+            </div>
+            <div className="shrink-0">
+              <PWAInstallButton />
+            </div>
           </div>
         </div>
       )}
