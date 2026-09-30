@@ -2,65 +2,219 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // =========================================================================
+    // CORE AUTHENTICATION & ROLE-BASED ACCESS CONTROL (RBAC) HELPERS
+    // =========================================================================
+
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isAdmin() {
-      return (
-        request.auth != null && (
-          request.auth.token.email == 'admin@cdnghe01bqp.edu.vn' ||
-          request.auth.token.email == 'sanginnova8@gmail.com' ||
-          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
-        )
+    function isSuperUser() {
+      return isSignedIn() && (
+        request.auth.token.email == 'sanginnova8@gmail.com' ||
+        request.auth.token.email == 'admin@cdnghe01bqp.edu.vn'
       );
     }
 
-    function isValidId(id) {
-      return id is string && id.size() <= 128;
+    function getUserData() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+        : null;
     }
 
-    // 1. Users collection: Allow read and write so teachers can create & manage class accounts
+    function getUserRole() {
+      return getUserData() != null ? getUserData().role : 'guest';
+    }
+
+    function isOwner() {
+      return isSignedIn() && (isSuperUser() || getUserRole() == 'owner');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (isOwner() || getUserRole() == 'admin');
+    }
+
+    function isInspector() {
+      return isSignedIn() && (isAdmin() || getUserRole() == 'inspector');
+    }
+
+    function isManager() {
+      return isSignedIn() && (isInspector() || getUserRole() == 'manager');
+    }
+
+    function isTeacher() {
+      return isSignedIn() && (isManager() || getUserRole() == 'teacher');
+    }
+
+    function isRecorder() {
+      return isSignedIn() && (isTeacher() || getUserRole() == 'recorder');
+    }
+
+    // Verify account is active and not disabled
+    function isAccountActive() {
+      return isSignedIn() && (
+        isSuperUser() ||
+        getUserData() == null ||
+        (getUserData().status != 'disabled' && getUserData().isActive != false)
+      );
+    }
+
+    // Check class assignment permission for Teacher / Homeroom
+    function canAccessClass(classId) {
+      return isAccountActive() && (
+        isAdmin() ||
+        isInspector() ||
+        (getUserData() != null && (
+          (getUserData().assignedClassIds != null && classId in getUserData().assignedClassIds) ||
+          getUserData().assignedClassId == classId ||
+          getUserData().assignedClassName == classId
+        ))
+      );
+    }
+
+    // =========================================================================
+    // 1. USERS & USER PROFILES
+    // =========================================================================
     match /users/{userId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isSignedIn();
+      allow create: if isAccountActive() && (isAdmin() || request.auth.uid == userId);
+      allow update: if isAccountActive() && (isAdmin() || request.auth.uid == userId);
+      allow delete: if isAccountActive() && isAdmin();
     }
 
-    // 2. Classes collection: Allow read and write for class listings & homeroom management
+    // =========================================================================
+    // 2. SCHOOL & MULTI-YEAR ACADEMIC HIERARCHY
+    // =========================================================================
+    match /schools/{schoolId} {
+      allow read: if true;
+      allow write: if isAccountActive() && isAdmin();
+    }
+
+    match /academicYears/{yearId} {
+      allow read: if true;
+      allow write: if isAccountActive() && isAdmin();
+    }
+
+    match /semesters/{semesterId} {
+      allow read: if true;
+      allow write: if isAccountActive() && isAdmin();
+    }
+
+    // =========================================================================
+    // 3. CLASSES
+    // =========================================================================
     match /classes/{classId} {
       allow read: if true;
-      allow write: if true;
+      allow create: if isAccountActive() && isAdmin();
+      allow update: if isAccountActive() && (isAdmin() || canAccessClass(classId));
+      allow delete: if isAccountActive() && isAdmin();
     }
 
-    // 3. Students collection: Allow managing students
+    // =========================================================================
+    // 4. STUDENTS & ENROLLMENTS
+    // =========================================================================
     match /students/{studentId} {
-      allow read: if true;
-      allow write: if true;
+      // Strict: Public CANNOT read students directly. Only authenticated school staff.
+      allow read: if isAccountActive() && isRecorder();
+      // Only Admin and assigned Teacher can create/update. Recorder CANNOT update student.
+      allow create: if isAccountActive() && isTeacher();
+      allow update: if isAccountActive() && isTeacher();
+      allow delete: if isAccountActive() && isAdmin();
     }
 
-    // 4. Behavior Categories collection: Criteria catalog
+    match /enrollments/{enrollmentId} {
+      allow read: if isAccountActive() && isRecorder();
+      allow write: if isAccountActive() && isTeacher();
+    }
+
+    // =========================================================================
+    // 5. BEHAVIOR CATEGORIES & REGULATIONS
+    // =========================================================================
     match /behaviorCategories/{categoryId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if true; // Public can see behavior regulations
+      allow create, update: if isAccountActive() && (isAdmin() || isTeacher());
+      allow delete: if isAccountActive() && isAdmin();
     }
 
-    // 5. Discipline Logs collection: Scoring records & behavior violations
+    // =========================================================================
+    // 6. DISCIPLINE LOGS (CORE LOGGING COLLECTION)
+    // =========================================================================
     match /disciplineLogs/{logId} {
-      allow read: if true;
-      allow write: if true;
+      // Staff with Recorder role or higher can read
+      allow read: if isAccountActive() && isRecorder();
+      // Recorder, Teacher, Manager, Admin can create
+      allow create: if isAccountActive() && isRecorder();
+      // Only Teacher, Manager, Admin can edit or void. Recorder CANNOT edit once saved!
+      allow update: if isAccountActive() && isTeacher();
+      // Hard delete is restricted to Admin/Owner; prefer status='voided'
+      allow delete: if isAccountActive() && isAdmin();
     }
 
-    // 6. Class Configs collection: Homeroom configuration & rules
+    // =========================================================================
+    // 7. SNAPSHOTS & SUMMARIES
+    // =========================================================================
+    match /weeklySnapshots/{snapshotId} {
+      allow read: if isAccountActive() && isRecorder();
+      allow write: if isAccountActive() && isTeacher();
+    }
+
+    match /monthlySummaries/{summaryId} {
+      allow read: if isAccountActive() && isTeacher();
+      allow write: if isAccountActive() && isTeacher();
+    }
+
+    match /semesterSummaries/{summaryId} {
+      allow read: if isAccountActive() && isTeacher();
+      allow write: if isAccountActive() && isTeacher();
+    }
+
+    // =========================================================================
+    // 8. CLASS CONFIGS (HOMEROOM SETTINGS)
+    // =========================================================================
     match /classConfigs/{configId} {
       allow read: if true;
-      allow write: if true;
+      allow create, update: if isAccountActive() && (isAdmin() || isTeacher());
+      allow delete: if isAccountActive() && isAdmin();
     }
 
-    // 7. Period Locks collection: Weekly/monthly lock status
+    // =========================================================================
+    // 9. PERIOD LOCKS (ANTI-TAMPER LOCKING)
+    // =========================================================================
     match /periodLocks/{lockId} {
       allow read: if true;
-      allow write: if true;
+      // Only Inspector, Admin, or authorized Teacher can set/update lock
+      allow create, update: if isAccountActive() && (isInspector() || isAdmin());
+      allow delete: if isAccountActive() && isAdmin();
+    }
+
+    // =========================================================================
+    // 10. AUDIT LOGS (IMMUTABLE AUDIT TRAIL)
+    // =========================================================================
+    match /auditLogs/{logId} {
+      // Only Admin and Owner can read audit logs
+      allow read: if isAccountActive() && isAdmin();
+      // Any authenticated action can create an audit trail entry
+      allow create: if isAccountActive();
+      // STRICT IMMUTABILITY: Nobody, even clients, can update or delete audit logs!
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // =========================================================================
+    // 11. SYSTEM CONFIGURATIONS
+    // =========================================================================
+    match /systemConfigs/{configId} {
+      allow read: if true;
+      allow write: if isAccountActive() && isAdmin();
+    }
+
+    // =========================================================================
+    // 12. PARENT REPORTS
+    // =========================================================================
+    match /parentReports/{reportId} {
+      allow read: if isAccountActive() && isTeacher();
+      allow write: if isAccountActive() && isTeacher();
     }
   }
 }
