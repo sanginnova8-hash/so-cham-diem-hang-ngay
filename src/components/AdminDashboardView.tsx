@@ -27,6 +27,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { UserAccount, SchoolClass, UserRole } from '../types';
 import { TabType } from './Navbar';
+import { PeriodLockManagerV2 } from './v2/PeriodLockManagerV2';
 
 interface AdminDashboardViewProps {
   onNavigateTab: (tab: TabType) => void;
@@ -756,67 +757,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
         </div>
       )}
 
-      {/* SUB-TAB 3: KHÓA SỔ THI ĐUA ĐỊNH KỲ (LOCK PERIOD MANAGEMENT) */}
+      {/* SUB-TAB 3: KHÓA SỔ THI ĐUA ĐỊNH KỲ V2 & BÁO CÁO LƯU VẾT KIỂM TOÁN */}
       {activeAdminSubTab === 'locking' && (
-        <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
-          <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Lock className="h-5 w-5 text-amber-500" />
-              <span>Quản Lý Khóa Sổ Thi Đua Định Kỳ (Chống Sửa Điểm Hồi Tố)</span>
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Sau khi Ban Giám Hiệu hoặc Hội đồng thi đua đã bình xét tuần/tháng, Admin bật "Khóa sổ" để ngăn giáo viên tự ý sửa điểm, đảm bảo tính công bằng và kỷ luật.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((weekNum) => {
-              const locked = isPeriodLocked('week', weekNum);
-              return (
-                <div
-                  key={weekNum}
-                  className={`p-4 rounded-2xl border transition flex flex-col justify-between space-y-3 ${
-                    locked
-                      ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/30'
-                      : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                        Tuần Học Số {weekNum}
-                      </h4>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        {locked ? 'ĐÃ KHÓA SỔ (Chỉ xem)' : 'Đang mở nhập điểm'}
-                      </p>
-                    </div>
-                    {locked ? (
-                      <span className="p-1.5 rounded-lg bg-amber-500 text-white">
-                        <Lock className="h-4 w-4" />
-                      </span>
-                    ) : (
-                      <span className="p-1.5 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                        <Unlock className="h-4 w-4" />
-                      </span>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => toggleLockPeriod('week', weekNum, `Khóa sổ Tuần ${weekNum} sau khi bình xét`)}
-                    className={`w-full py-1.5 text-xs font-bold rounded-xl transition ${
-                      locked
-                        ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs'
-                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200'
-                    }`}
-                  >
-                    {locked ? 'Mở Khóa Tuần Này' : 'Khóa Sổ Tuần Này'}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <PeriodLockManagerV2 />
       )}
 
       {/* SUB-TAB 4: HẠ TẦNG CSDL & SAO LƯU TOÀN TRƯỜNG */}

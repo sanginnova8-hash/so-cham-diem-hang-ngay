@@ -42,10 +42,24 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({ onOpenLoginM
   } = useApp();
 
   // Search state for student/parent
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('token') || '';
+    } catch {
+      return '';
+    }
+  });
   const [searchResult, setSearchResult] = useState<Student | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchCopied, setSearchCopied] = useState(false);
+
+  // Auto-search if token query exists in URL
+  React.useEffect(() => {
+    if (searchQuery && students.length > 0 && !hasSearched) {
+      handleSearch();
+    }
+  }, [students]);
 
   // Default to Week 1 or Week 2
   const currentWeek = 1;
@@ -63,6 +77,7 @@ export const PublicPortalView: React.FC<PublicPortalViewProps> = ({ onOpenLoginM
     const found = students.find(
       (s) =>
         s.studentCode.toLowerCase() === query ||
+        (s.parentLookupToken && s.parentLookupToken.toLowerCase() === query) ||
         s.fullName.toLowerCase().includes(query) ||
         (s.parentPhone && s.parentPhone.includes(query))
     );

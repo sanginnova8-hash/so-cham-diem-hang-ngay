@@ -41,6 +41,7 @@ import {
 } from '../lib/utils';
 import { TabType } from './Navbar';
 import { SummaryZaloExportModal } from './SummaryZaloExportModal';
+import { PeriodLockBannerV2 } from './v2/PeriodLockBannerV2';
 
 interface WeeklySummaryViewProps {
   onNavigateTab: (tab: TabType) => void;
@@ -55,6 +56,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
     classConfig,
     students,
     disciplineLogs,
+    isPeriodLocked,
     getWeeklySummary,
     awardAchievementBonus,
     batchAwardAchievementBonus,
@@ -515,6 +517,13 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
         </div>
       </div>
 
+      {/* Period Lock Banner V2 */}
+      <PeriodLockBannerV2
+        periodType="week"
+        periodValue={selectedWeek}
+        periodTitle={currentWeekInfo ? `${currentWeekInfo.title} (${currentWeekInfo.startDate} đến ${currentWeekInfo.endDate})` : undefined}
+      />
+
       {/* Success notification banner */}
       {awardingResult && (
         <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 font-medium flex items-center justify-between animate-fadeIn">
@@ -557,50 +566,59 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {eligibleZeroViolationStudents.length > 0 && zeroViolationRule && (
-              <button
-                onClick={() => setIsAutoAwardModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl shadow-sm transition active:scale-95"
-              >
-                <Zap className="h-4 w-4" />
-                <span>Xét thưởng 0 vi phạm ({eligibleZeroViolationStudents.length} HS)</span>
-              </button>
-            )}
-
-            <button
-              onClick={() => {
-                if (tableSelectedStudentIds.size > 0) {
-                  setSelectedStudentIds(Array.from(tableSelectedStudentIds));
-                } else {
-                  setSelectedStudentIds([]);
-                }
-                setModalStudentSearch('');
-                setSelectedRuleId('');
-                setCustomScoreInput(1.0);
-                setCustomNoteInput('');
-                setIsCustomAwardModalOpen(true);
-              }}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition active:scale-95 cursor-pointer"
-              title="Cộng điểm thưởng tuần cho một hoặc nhiều học sinh cùng lúc"
-            >
-              <Award className="h-4 w-4" />
-              <span>
-                + Cộng điểm tuần {tableSelectedStudentIds.size > 0 ? `(${tableSelectedStudentIds.size} HS đã chọn)` : '(Nhiều HS)'}
+            {isPeriodLocked('week', selectedWeek) ? (
+              <span className="text-xs font-bold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+                <AlertTriangle className="h-4 w-4" />
+                <span>Tuần {selectedWeek} đã khóa thi đua. Tính năng cộng/sửa thưởng đã bị khóa.</span>
               </span>
-            </button>
+            ) : (
+              <>
+                {eligibleZeroViolationStudents.length > 0 && zeroViolationRule && (
+                  <button
+                    onClick={() => setIsAutoAwardModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl shadow-sm transition active:scale-95 cursor-pointer"
+                  >
+                    <Zap className="h-4 w-4" />
+                    <span>Xét thưởng 0 vi phạm ({eligibleZeroViolationStudents.length} HS)</span>
+                  </button>
+                )}
 
-            <button
-              onClick={() => handleOpenManageBonuses('all')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 border text-xs font-bold rounded-xl shadow-xs transition active:scale-95 ${
-                weeklyBonusLogs.length > 0
-                  ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700'
-                  : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
-              }`}
-              title="Xem danh sách, sửa mức điểm hoặc xóa điểm thưởng đã trao trong tuần"
-            >
-              <Edit3 className="h-4 w-4 text-amber-600" />
-              <span>Sửa / Xóa điểm thưởng ({weeklyBonusLogs.length})</span>
-            </button>
+                <button
+                  onClick={() => {
+                    if (tableSelectedStudentIds.size > 0) {
+                      setSelectedStudentIds(Array.from(tableSelectedStudentIds));
+                    } else {
+                      setSelectedStudentIds([]);
+                    }
+                    setModalStudentSearch('');
+                    setSelectedRuleId('');
+                    setCustomScoreInput(1.0);
+                    setCustomNoteInput('');
+                    setIsCustomAwardModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition active:scale-95 cursor-pointer"
+                  title="Cộng điểm thưởng tuần cho một hoặc nhiều học sinh cùng lúc"
+                >
+                  <Award className="h-4 w-4" />
+                  <span>
+                    + Cộng điểm tuần {tableSelectedStudentIds.size > 0 ? `(${tableSelectedStudentIds.size} HS đã chọn)` : '(Nhiều HS)'}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => handleOpenManageBonuses('all')}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 border text-xs font-bold rounded-xl shadow-xs transition active:scale-95 cursor-pointer ${
+                    weeklyBonusLogs.length > 0
+                      ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700'
+                      : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                  }`}
+                  title="Xem danh sách, sửa mức điểm hoặc xóa điểm thưởng đã trao trong tuần"
+                >
+                  <Edit3 className="h-4 w-4 text-amber-600" />
+                  <span>Sửa / Xóa điểm thưởng ({weeklyBonusLogs.length})</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

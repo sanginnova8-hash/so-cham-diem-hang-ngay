@@ -38,12 +38,15 @@ export interface SchoolClass {
 }
 
 export interface PeriodLockStatus {
-  periodType: 'week' | 'month';
-  periodValue: number; // weekNumber (1-35) or month (1-12)
+  periodType: 'week' | 'month' | 'semester';
+  periodValue: number; // weekNumber (1-35) or month (1-12) or semester (1-2)
   isLocked: boolean;
   lockedAt?: string;
   lockedBy?: string;
   reason?: string;
+  unlockedAt?: string;
+  unlockedBy?: string;
+  unlockReason?: string;
 }
 
 export interface Student {
@@ -59,6 +62,7 @@ export interface Student {
   classId: string;
   parentName?: string;
   parentPhone?: string;
+  parentLookupToken?: string;
   createdAt: string;
   updatedAt: string;
 }

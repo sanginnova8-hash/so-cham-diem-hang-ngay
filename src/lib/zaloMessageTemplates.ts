@@ -76,6 +76,8 @@ export const SMART_TAGS: SmartTagInfo[] = [
   { tag: '{chi_tiet_khen_thuong}', label: 'Chi tiết khen thưởng', description: 'Điểm cộng & thành tích việc tốt', category: 'student' },
   { tag: '{loi_nhan_gv}', label: 'Lời dặn dò từ GV', description: 'Động viên, nhắc nhở riêng của GVCN', category: 'student' },
   { tag: '{sdt_phu_huynh}', label: 'SĐT Phụ huynh', description: 'Số điện thoại của gia đình', category: 'student' },
+  { tag: '{ma_tra_cuu}', label: 'Mã tra cứu phụ huynh', description: 'Mã token bí mật để phụ huynh tự tra cứu', category: 'student' },
+  { tag: '{link_tra_cuu}', label: 'Link tra cứu 1-chạm', description: 'Đường dẫn tra cứu kết quả rèn luyện trực tuyến', category: 'student' },
 ];
 
 export const DEFAULT_ZALO_TEMPLATES: ZaloMessageTemplate[] = [
@@ -602,6 +604,10 @@ export function resolveTemplateTags(params: {
     '{chi_tiet_khen_thuong}': studentBonusDetail,
     '{loi_nhan_gv}': studentTeacherAdvice,
     '{sdt_phu_huynh}': studentParentPhone,
+    '{ma_tra_cuu}': selectedStudent?.parentLookupToken || selectedStudent?.studentCode || 'Chưa cấp',
+    '{link_tra_cuu}': typeof window !== 'undefined'
+      ? `${window.location.origin}/?token=${selectedStudent?.parentLookupToken || selectedStudent?.studentCode || ''}`
+      : `/?token=${selectedStudent?.parentLookupToken || selectedStudent?.studentCode || ''}`,
   };
 
   let result = templateText;

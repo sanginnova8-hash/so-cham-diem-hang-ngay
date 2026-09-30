@@ -886,6 +886,23 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
               )}
             </button>
 
+            {/* 1-Touch Zalo Direct Open for Individual Parent */}
+            {targetMode === 'individual_parent' && selectedStudent?.parentPhone && (
+              <button
+                type="button"
+                onClick={() => {
+                  handleCopy();
+                  const cleanPhone = (selectedStudent.parentPhone || '').replace(/\D/g, '');
+                  if (cleanPhone) window.open(`https://zalo.me/${cleanPhone}`, '_blank');
+                }}
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white active:scale-98 cursor-pointer"
+                title="Tự động sao chép tin nhắn và mở thẳng Zalo cá nhân của phụ huynh học sinh này"
+              >
+                <ExternalLink className="h-4 w-4" />
+                <span>1-Chạm: Mở Chat Zalo Với PH ({selectedStudent.parentPhone})</span>
+              </button>
+            )}
+
             {/* Secondary Action Buttons */}
             <div className="grid grid-cols-2 gap-2 text-xs">
               <button

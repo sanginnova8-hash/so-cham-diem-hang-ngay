@@ -109,13 +109,13 @@ interface AppContextType {
   schoolClasses: SchoolClass[];
   lockedPeriods: PeriodLockStatus[];
   inspectorModeClass: SchoolClass | null;
-  isPeriodLocked: (periodType: 'week' | 'month', periodValue: number) => boolean;
+  isPeriodLocked: (periodType: 'week' | 'month' | 'semester', periodValue: number) => boolean;
   loginAsRole: (role: UserRole, accountUid?: string) => void;
   switchAccount: (accountUid: string) => void;
   enterInspectorMode: (classItem: SchoolClass) => void;
   exitInspectorMode: () => void;
   switchWorkingClass: (classItem: SchoolClass) => void;
-  toggleLockPeriod: (periodType: 'week' | 'month', periodValue: number, reason?: string) => void;
+  toggleLockPeriod: (periodType: 'week' | 'month' | 'semester', periodValue: number, reason?: string) => void;
   updateUserAccount: (uid: string, updates: Partial<UserAccount>) => void;
   resetUserPassword: (uid: string) => { success: boolean; tempPass: string };
   toggleUserAccountStatus: (uid: string) => void;
@@ -170,6 +170,7 @@ interface AppContextType {
   revokeAchievementBonus: (logId: string) => Promise<void>;
 
   addDisciplineLog: (log: Omit<DisciplineLog, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId' | 'totalScore'>) => Promise<{ log: DisciplineLog; duplicateWarning?: boolean }>;
+  addBulkDisciplineLogs: (logs: Array<Omit<DisciplineLog, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId' | 'totalScore'>>) => Promise<{ logs: DisciplineLog[] }>;
   updateDisciplineLog: (id: string, updates: Partial<DisciplineLog>, editorName: string) => Promise<void>;
   deleteDisciplineLog: (id: string, editorName: string) => Promise<void>;
   importDisciplineLogsBatch: (newLogs: Array<Omit<DisciplineLog, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId' | 'totalScore'>>) => Promise<{ imported: number }>;
@@ -275,7 +276,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [userAccounts, lockedPeriods, userRole, activeAccount]);
 
-  const isPeriodLocked = (periodType: 'week' | 'month', periodValue: number): boolean => {
+  const isPeriodLocked = (periodType: 'week' | 'month' | 'semester', periodValue: number): boolean => {
     return lockedPeriods.some(
       (p) => p.periodType === periodType && p.periodValue === periodValue && p.isLocked
     );
@@ -339,7 +340,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setInspectorModeClass(null);
   };
 
-  const toggleLockPeriod = (periodType: 'week' | 'month', periodValue: number, reason?: string) => {
+  const toggleLockPeriod = (periodType: 'week' | 'month' | 'semester', periodValue: number, reason?: string) => {
     setLockedPeriods((prev) => {
       const idx = prev.findIndex((p) => p.periodType === periodType && p.periodValue === periodValue);
       if (idx >= 0) {
@@ -1291,9 +1292,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Add Student
   const addStudent = async (data: Omit<Student, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId'>): Promise<Student> => {
     const teacherId = getEffectiveTeacherId();
+    const token = data.parentLookupToken || Math.random().toString(36).substring(2, 12).toUpperCase();
     const newStudent: Student = {
       ...data,
       id: `std_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      parentLookupToken: token,
       teacherId,
       classId: classConfig.id,
       createdAt: new Date().toISOString(),
@@ -1407,9 +1410,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       } else {
         // Add new
+        const token = item.parentLookupToken || Math.random().toString(36).substring(2, 12).toUpperCase();
         const newStud: Student = {
           ...item,
           id: `std_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          parentLookupToken: token,
           teacherId,
           classId: classConfig.id,
           createdAt: new Date().toISOString(),
@@ -1659,10 +1664,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await deleteDisciplineLog(logId, classConfig.homeroomTeacher || 'GVCN');
   };
 
-  // Add Discipline Log
+  // Add Discipline Log with Period Lock Guard
   const addDisciplineLog = async (
     logData: Omit<DisciplineLog, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId' | 'totalScore'>
   ): Promise<{ log: DisciplineLog; duplicateWarning?: boolean }> => {
+    if (isPeriodLocked('week', logData.weekNumber)) {
+      throw new Error(`Tuần ${logData.weekNumber} đã được khóa thi đua bởi Ban Giám Hiệu. Không thể thêm mới dữ liệu.`);
+    }
+
     const teacherId = getEffectiveTeacherId();
 
     // Check potential duplicate (same student, same date, same behaviorCode, and period if filled)
@@ -1703,10 +1712,56 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { log: newLog, duplicateWarning: isDuplicate };
   };
 
-  // Update Discipline Log with edit history
+  // Add Bulk Discipline Logs (Ghi nhận hàng loạt nhiều học sinh)
+  const addBulkDisciplineLogs = async (
+    logsData: Array<Omit<DisciplineLog, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId' | 'totalScore'>>
+  ): Promise<{ logs: DisciplineLog[] }> => {
+    if (!logsData || logsData.length === 0) return { logs: [] };
+
+    const first = logsData[0];
+    if (isPeriodLocked('week', first.weekNumber)) {
+      throw new Error(`Tuần ${first.weekNumber} đã được khóa thi đua. Không thể thực hiện ghi nhận hàng loạt.`);
+    }
+
+    const teacherId = getEffectiveTeacherId();
+    const nowIso = new Date().toISOString();
+
+    const createdLogs: DisciplineLog[] = logsData.map((data, idx) => ({
+      ...data,
+      id: `log_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
+      totalScore: Math.round(data.scorePerUnit * data.count * 100) / 100,
+      teacherId,
+      classId: classConfig.id,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      history: [
+        {
+          timestamp: nowIso,
+          editorName: data.reporter || classConfig.homeroomTeacher || 'Giáo viên',
+          action: 'create',
+          newValue: `Ghi nhận hàng loạt: ${data.behaviorCode} - ${data.behaviorDescription} (${data.scorePerUnit}đ)`,
+        },
+      ],
+    }));
+
+    setDisciplineLogs((prev) => [...createdLogs, ...prev]);
+
+    // Async sync to cloud
+    for (const item of createdLogs) {
+      saveDisciplineLogToCloud(item).catch((err) => console.warn('Bulk log sync error:', err));
+    }
+
+    return { logs: createdLogs };
+  };
+
+  // Update Discipline Log with edit history and period lock guard
   const updateDisciplineLog = async (id: string, updates: Partial<DisciplineLog>, editorName: string) => {
     const target = disciplineLogs.find((l) => l.id === id);
     if (!target) return;
+
+    if (isPeriodLocked('week', target.weekNumber)) {
+      throw new Error(`Tuần ${target.weekNumber} đã được khóa thi đua. Không thể chỉnh sửa bản ghi.`);
+    }
 
     const previousDesc = `${target.behaviorCode} - ${target.behaviorDescription} (${target.count} lần, ${target.scorePerUnit}đ, tổng: ${target.totalScore}đ)`;
     const newCount = updates.count ?? target.count;
@@ -1738,8 +1793,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Delete Discipline Log
+  // Delete Discipline Log with period lock guard
   const deleteDisciplineLog = async (id: string, editorName: string) => {
+    const target = disciplineLogs.find((l) => l.id === id);
+    if (target && isPeriodLocked('week', target.weekNumber)) {
+      throw new Error(`Tuần ${target.weekNumber} đã được khóa thi đua. Không thể xóa bản ghi.`);
+    }
+
     setDisciplineLogs((prev) => prev.filter((l) => l.id !== id));
 
     try {
@@ -2151,6 +2211,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         revokeAchievementBonus,
 
         addDisciplineLog,
+        addBulkDisciplineLogs,
         updateDisciplineLog,
         deleteDisciplineLog,
         importDisciplineLogsBatch,

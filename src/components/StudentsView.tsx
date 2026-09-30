@@ -30,9 +30,12 @@ import {
   ArrowDown01,
   ArrowUp10,
   RotateCcw,
+  Key,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { Student, StudentStatus } from '../types';
+import { Student, StudentStatus, RankLevel } from '../types';
+import { SmartStudentExcelImporter } from './v2/SmartStudentExcelImporter';
+import { StudentDetailModalV2 } from './v2/StudentDetailModalV2';
 import {
   formatVietnameseDate,
   formatVietnameseNumber,
@@ -41,6 +44,8 @@ import {
   exportToCsv,
   downloadStudentTemplate,
   getRankBadgeClass,
+  calculateRank,
+  clampScore,
   compareVietnameseNames,
   compareStudentCodes,
 } from '../lib/utils';
@@ -100,22 +105,16 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
   const [parentPhone, setParentPhone] = useState('');
   const [addErrors, setAddErrors] = useState<Record<string, string>>({});
 
-  // File import state
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [importPreview, setImportPreview] = useState<Array<{
-    rowNum: number;
-    studentCode: string;
-    lastName: string;
-    firstName: string;
-    fullName: string;
-    dateOfBirth?: string;
-    gender?: 'Nam' | 'Nữ';
-    parentName?: string;
-    parentPhone?: string;
-    isValid: boolean;
-    errorMsg?: string;
-  }>>([]);
-  const [importSummary, setImportSummary] = useState<{ total: number; valid: number; error: number } | null>(null);
+  // Helper to compute a student's current overall score
+  const getStudentCurrentScore = (studentId: string): number => {
+    const logs = getStudentLogs(studentId);
+    let s = 10;
+    for (const l of logs) {
+      if (l.type === 'deduct') s -= l.totalScore;
+      else s += l.totalScore;
+    }
+    return clampScore(s);
+  };
 
   // Sorting state:
   // 'code': Xếp theo mã học sinh
@@ -215,112 +214,6 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     setParentName('');
     setParentPhone('');
     setIsAddModalOpen(false);
-  };
-
-  // Handle File Upload for Import
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
-        const previewList: typeof importPreview = [];
-        let validCount = 0;
-        let errorCount = 0;
-
-        rawRows.forEach((row, idx) => {
-          const rowNum = idx + 2; // header is row 1
-          // Flexible key matching
-          const sCode = String(row['Mã học sinh'] || row['Ma hoc sinh'] || row['Mã HS'] || row['MaHS'] || row['Code'] || '').trim();
-          const lName = String(row['Họ đệm'] || row['Ho dem'] || row['Họ'] || row['Ho'] || '').trim();
-          const fName = String(row['Tên'] || row['Ten'] || '').trim();
-          const rawFull = String(row['Họ và tên'] || row['Ho va ten'] || row['Họ tên'] || row['FullName'] || '').trim();
-          const dob = String(row['Ngày sinh'] || row['Ngay sinh'] || row['DOB'] || '').trim();
-          const gen = String(row['Giới tính'] || row['Gioi tinh'] || '').trim();
-          const pName = String(row['Tên phụ huynh'] || row['Ten phu huynh'] || row['Phụ huynh'] || '').trim();
-          const pPhone = String(row['Điện thoại phụ huynh'] || row['Dien thoai'] || row['SĐT'] || '').trim();
-
-          let resolvedLastName = lName;
-          let resolvedFirstName = fName;
-          let resolvedFullName = '';
-
-          if (!resolvedFirstName && rawFull) {
-            const parts = rawFull.split(' ');
-            resolvedFirstName = parts.pop() || '';
-            resolvedLastName = parts.join(' ');
-          }
-          resolvedFullName = resolvedLastName ? `${resolvedLastName} ${resolvedFirstName}` : resolvedFirstName;
-
-          let isValid = true;
-          let errorMsg = '';
-
-          if (!sCode) {
-            isValid = false;
-            errorMsg = 'Thiếu mã học sinh';
-          } else if (!resolvedFirstName) {
-            isValid = false;
-            errorMsg = 'Thiếu tên học sinh';
-          }
-
-          if (isValid) validCount++;
-          else errorCount++;
-
-          previewList.push({
-            rowNum,
-            studentCode: sCode.toUpperCase(),
-            lastName: resolvedLastName,
-            firstName: resolvedFirstName,
-            fullName: resolvedFullName,
-            dateOfBirth: dob,
-            gender: gen.toLowerCase().includes('nữ') ? 'Nữ' : 'Nam',
-            parentName: pName,
-            parentPhone: pPhone,
-            isValid,
-            errorMsg,
-          });
-        });
-
-        setImportPreview(previewList);
-        setImportSummary({ total: rawRows.length, valid: validCount, error: errorCount });
-      } catch (err: any) {
-        alert('Lỗi đọc tệp Excel/CSV: ' + (err.message || String(err)));
-      }
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  // Confirm Import
-  const handleConfirmImport = async () => {
-    const validRows = importPreview.filter((r) => r.isValid);
-    if (validRows.length === 0) {
-      alert('Không có dòng hợp lệ nào để nhập.');
-      return;
-    }
-
-    const payload = validRows.map((r) => ({
-      studentCode: r.studentCode,
-      lastName: r.lastName,
-      firstName: r.firstName,
-      fullName: r.fullName,
-      dateOfBirth: r.dateOfBirth,
-      gender: r.gender,
-      status: 'active' as StudentStatus,
-      parentName: r.parentName,
-      parentPhone: r.parentPhone,
-    }));
-
-    const result = await importStudentsBatch(payload);
-    alert(`Nhập thành công! Đã thêm mới ${result.imported} học sinh, cập nhật ${result.updated} học sinh.`);
-    setImportPreview([]);
-    setImportSummary(null);
-    setIsImportModalOpen(false);
   };
 
   // Multi-select handlers
@@ -740,11 +633,28 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                         <span className="font-bold text-slate-900 dark:text-white block text-sm">
                           {s.fullName}
                         </span>
-                        {s.dateOfBirth && (
-                          <span className="text-[10px] text-slate-400">
-                            Sinh ngày: {formatVietnameseDate(s.dateOfBirth)}
-                          </span>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                          {s.dateOfBirth && (
+                            <span className="text-[10px] text-slate-400">
+                              Sinh: {formatVietnameseDate(s.dateOfBirth)}
+                            </span>
+                          )}
+                          {s.parentLookupToken && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(s.parentLookupToken!);
+                                alert(`Đã sao chép mã tra cứu của học sinh ${s.fullName}: ${s.parentLookupToken}`);
+                              }}
+                              title="Mã tra cứu phụ huynh (Click để sao chép)"
+                              className="inline-flex items-center gap-1 font-mono text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-1.5 py-0.5 rounded cursor-pointer hover:bg-indigo-100 transition"
+                            >
+                              <Key className="h-2.5 w-2.5 text-indigo-600 dark:text-indigo-400" />
+                              <span>Tra cứu: {s.parentLookupToken}</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
                         {s.gender || '—'}
@@ -1044,228 +954,26 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
         </div>
       )}
 
-      {/* DRAWER / MODAL: Chi tiết học sinh */}
+      {/* V2 MODAL: Chi tiết học sinh & Quản lý mã tra cứu phụ huynh */}
       {viewingStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center font-bold text-blue-600 text-sm">
-                  {viewingStudent.firstName[0]}
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <span>{viewingStudent.fullName}</span>
-                    <span className="text-xs font-mono px-2 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded">
-                      {viewingStudent.studentCode}
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Lớp {classConfig.className} • Phụ huynh: {viewingStudent.parentName || 'Chưa cập nhật'} (
-                    {viewingStudent.parentPhone || 'Chưa có SĐT'})
-                  </p>
-                </div>
-              </div>
-              <button onClick={() => setViewingStudent(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Disciplinary history of this student */}
-            <div className="mt-4 space-y-4 text-xs">
-              <div className="flex items-center justify-between">
-                <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                  Lịch Sử Ghi Nhận Nề Nếp & Thi Đua
-                </h4>
-                <button
-                  onClick={() => {
-                    if (onSelectStudentForReport) onSelectStudentForReport(viewingStudent.id);
-                    onNavigateTab('parent-report');
-                  }}
-                  className="px-3 py-1 bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-lg font-semibold hover:bg-blue-100"
-                >
-                  Tạo tin nhắn báo phụ huynh
-                </button>
-              </div>
-
-              {getStudentLogs(viewingStudent.id).length === 0 ? (
-                <div className="py-8 text-center bg-slate-50 dark:bg-slate-750/50 rounded-xl text-slate-500">
-                  Học sinh chưa có bản ghi vi phạm hay khen thưởng nào. Nề nếp duy trì hoàn hảo!
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                  {getStudentLogs(viewingStudent.id).map((log) => (
-                    <div
-                      key={log.id}
-                      className="p-3 bg-slate-50 dark:bg-slate-750 rounded-xl border border-slate-100 dark:border-slate-700 flex items-center justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold">[{log.behaviorCode}]</span>
-                          <span>{log.behaviorDescription}</span>
-                        </div>
-                        <span className="text-[10px] text-slate-400">
-                          {formatVietnameseDate(log.date)} • Tuần {log.weekNumber} • {log.periodOrTime || 'Trong ngày'}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span
-                          className={`font-bold font-mono ${
-                            log.type === 'deduct' ? 'text-rose-600' : 'text-emerald-600'
-                          }`}
-                        >
-                          {log.type === 'deduct' ? '-' : '+'}
-                          {formatVietnameseNumber(log.totalScore)}đ
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="mt-6 pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-end">
-              <button
-                onClick={() => setViewingStudent(null)}
-                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
+        <StudentDetailModalV2
+          isOpen={!!viewingStudent}
+          onClose={() => setViewingStudent(null)}
+          student={viewingStudent}
+          logs={getStudentLogs(viewingStudent.id)}
+          currentScore={getStudentCurrentScore(viewingStudent.id)}
+          currentRank={calculateRank(getStudentCurrentScore(viewingStudent.id))}
+          onUpdateStudent={updateStudent}
+        />
       )}
 
-      {/* MODAL: Nhập danh sách từ Excel/CSV với kiểm tra lỗi từng dòng */}
-      {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Upload className="h-5 w-5 text-blue-600" />
-                <span>Nhập Danh Sách Học Sinh Từ Excel / CSV</span>
-              </h3>
-              <button
-                onClick={() => {
-                  setImportPreview([]);
-                  setImportSummary(null);
-                  setIsImportModalOpen(false);
-                }}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-4 text-xs">
-              <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl text-slate-700 dark:text-slate-300">
-                <p className="font-semibold mb-1">Hướng dẫn nhập danh sách:</p>
-                <ul className="list-disc list-inside space-y-0.5 text-slate-600 dark:text-slate-400">
-                  <li>Tệp hỗ trợ: .xlsx, .xls, .csv</li>
-                  <li>Cột bắt buộc: <strong>Mã học sinh</strong>, <strong>Họ đệm</strong>, <strong>Tên</strong></li>
-                  <li>Nếu trùng mã học sinh với danh sách hiện tại, thông tin sẽ được cập nhật lại theo tệp mới.</li>
-                </ul>
-                <div className="mt-2">
-                  <button
-                    onClick={downloadStudentTemplate}
-                    className="text-blue-600 dark:text-blue-400 font-bold hover:underline flex items-center gap-1"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    <span>Tải tệp mẫu Excel chuẩn (Mau_nhap_danh_sach_hoc_sinh_10A8.xlsx)</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Upload Input */}
-              <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-6 text-center hover:bg-slate-50 dark:hover:bg-slate-750 transition cursor-pointer"
-                   onClick={() => fileInputRef.current?.click()}>
-                <FileSpreadsheet className="h-10 w-10 text-blue-500 mx-auto mb-2" />
-                <p className="font-semibold text-slate-800 dark:text-slate-200">
-                  Nhấn để chọn tệp Excel hoặc CSV từ máy tính
-                </p>
-                <p className="text-slate-400 text-[11px] mt-1">.xlsx, .xls, .csv dung lượng tối đa 10MB</p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx, .xls, .csv"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </div>
-
-              {/* Preview table & Validation */}
-              {importSummary && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-slate-100 dark:bg-slate-750 rounded-xl font-bold">
-                    <span>Kết quả kiểm tra: {importSummary.total} dòng trong tệp</span>
-                    <div className="flex gap-3 text-xs">
-                      <span className="text-emerald-600">✓ {importSummary.valid} dòng hợp lệ</span>
-                      {importSummary.error > 0 && (
-                        <span className="text-rose-600">⚠ {importSummary.error} dòng lỗi</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="max-h-56 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                        <tr>
-                          <th className="p-2">Dòng</th>
-                          <th className="p-2">Mã HS</th>
-                          <th className="p-2">Họ và tên</th>
-                          <th className="p-2">Ngày sinh</th>
-                          <th className="p-2">Trạng thái dòng</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                        {importPreview.map((row) => (
-                          <tr key={row.rowNum} className={row.isValid ? '' : 'bg-rose-50 dark:bg-rose-950/30'}>
-                            <td className="p-2 font-mono">{row.rowNum}</td>
-                            <td className="p-2 font-mono font-bold">{row.studentCode || '—'}</td>
-                            <td className="p-2 font-bold">{row.fullName || '—'}</td>
-                            <td className="p-2">{row.dateOfBirth || '—'}</td>
-                            <td className="p-2">
-                              {row.isValid ? (
-                                <span className="text-emerald-600 font-semibold flex items-center gap-1">
-                                  <CheckCircle2 className="h-3.5 w-3.5" /> Hợp lệ
-                                </span>
-                              ) : (
-                                <span className="text-rose-600 font-semibold flex items-center gap-1">
-                                  <AlertTriangle className="h-3.5 w-3.5" /> {row.errorMsg}
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-6 pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setImportPreview([]);
-                  setImportSummary(null);
-                  setIsImportModalOpen(false);
-                }}
-                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                onClick={handleConfirmImport}
-                disabled={!importSummary || importSummary.valid === 0}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold"
-              >
-                Xác nhận nhập {importSummary?.valid || 0} học sinh
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* V2 MODAL: Nhập danh sách từ Excel/CSV thông minh */}
+      <SmartStudentExcelImporter
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        existingStudents={students}
+        onImport={importStudentsBatch}
+      />
 
       {/* MODAL: Xác nhận xóa học sinh (đơn lẻ hoặc hàng loạt) */}
       {deleteConfirmState && (

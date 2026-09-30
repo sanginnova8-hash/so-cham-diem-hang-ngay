@@ -15,10 +15,12 @@ import {
   AlertTriangle,
   Lightbulb,
   Upload,
+  Lock,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { DisciplineLog, BehaviorCategory, Student, BehaviorType } from '../types';
 import { ImportDisciplineLogsModal } from './ImportDisciplineLogsModal';
+import { DailyLogModalV2 } from './v2/DailyLogModalV2';
 import {
   formatVietnameseDate,
   formatVietnameseNumber,
@@ -45,6 +47,7 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
     behaviorCategories,
     disciplineLogs,
     classConfig,
+    isPeriodLocked,
     addDisciplineLog,
     updateDisciplineLog,
     deleteDisciplineLog,
@@ -66,86 +69,6 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
   const [editingLog, setEditingLog] = useState<DisciplineLog | null>(null);
   const [historyLog, setHistoryLog] = useState<DisciplineLog | null>(null);
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
-
-  // New log form state
-  const [newDate, setNewDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [newWeek, setNewWeek] = useState<number>(1);
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [studentSearchQuery, setStudentSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<BehaviorCategory | null>(null);
-  const [customDescription, setCustomDescription] = useState('');
-  const [newType, setNewType] = useState<BehaviorType>('deduct');
-  const [scorePerUnit, setScorePerUnit] = useState<number>(1);
-  const [count, setCount] = useState<number>(1);
-  const [periodOrTime, setPeriodOrTime] = useState('Tiết 1');
-  const [reporter, setReporter] = useState(classConfig.homeroomTeacher);
-  const [note, setNote] = useState('');
-  const [basisOrRegulation, setBasisOrRegulation] = useState('');
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [showDuplicateWarning, setShowDuplicateWarning] = useState<boolean>(false);
-  const [pendingLogToSave, setPendingLogToSave] = useState<any>(null);
-
-  // Auto-detect week from date
-  const suggestWeekFromDate = (dateString: string): number => {
-    const target = new Date(dateString).getTime();
-    for (const w of classConfig.weeks) {
-      const s = new Date(w.startDate).getTime();
-      const e = new Date(w.endDate).getTime() + 86400000;
-      if (target >= s && target <= e) {
-        return w.weekNumber;
-      }
-    }
-    return 1;
-  };
-
-  // When date changes in new modal, auto-suggest week
-  const handleDateChange = (val: string) => {
-    setNewDate(val);
-    const suggested = suggestWeekFromDate(val);
-    setNewWeek(suggested);
-  };
-
-  // Keyword suggestions when typing custom description
-  const keywordSuggestions = useMemo(() => {
-    if (!customDescription || customDescription.length < 2) return [];
-    const normalizedInput = removeVietnameseAccents(customDescription);
-
-    return behaviorCategories.filter((cat) => {
-      if (!cat.isActive) return false;
-      // Check code
-      if (cat.code.toLowerCase().includes(normalizedInput)) return true;
-      // Check keywords
-      if (cat.keywords && cat.keywords.some((k) => normalizedInput.includes(removeVietnameseAccents(k)) || removeVietnameseAccents(k).includes(normalizedInput))) {
-        return true;
-      }
-      // Check name
-      if (removeVietnameseAccents(cat.name).includes(normalizedInput)) return true;
-      return false;
-    });
-  }, [customDescription, behaviorCategories]);
-
-  // Apply a keyword suggestion to the form
-  const handleApplySuggestion = (cat: BehaviorCategory) => {
-    setSelectedCategory(cat);
-    setNewType(cat.type);
-    setScorePerUnit(cat.defaultScore);
-    setCustomDescription(cat.name);
-    setBasisOrRegulation(cat.basisOrRegulation || '');
-  };
-
-  // Filtered students for quick search in modal (sorted by student code)
-  const filteredStudentsForSelect = useMemo(() => {
-    let list = students;
-    if (studentSearchQuery) {
-      const q = removeVietnameseAccents(studentSearchQuery);
-      list = students.filter(
-        (s) =>
-          removeVietnameseAccents(s.fullName).includes(q) ||
-          s.studentCode.toLowerCase().includes(q)
-      );
-    }
-    return [...list].sort((a, b) => compareStudentCodes(a.studentCode, b.studentCode, 'asc'));
-  }, [students, studentSearchQuery]);
 
   // Filtered & Sorted logs for the main table
   const filteredLogs = useMemo(() => {
@@ -184,84 +107,6 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
       return 0;
     });
   }, [disciplineLogs, filterMonth, filterWeek, filterType, filterStudentId, searchTerm, sortField, sortAsc]);
-
-  // Validate and submit new log
-  const handleValidateAndSave = async (overrideDuplicate: boolean = false) => {
-    const errors: Record<string, string> = {};
-    if (!newDate) errors.date = 'Vui lòng chọn ngày ghi nhận';
-    if (!selectedStudent) errors.student = 'Vui lòng chọn học sinh';
-    if (!selectedCategory && !customDescription.trim()) {
-      errors.behavior = 'Vui lòng chọn danh mục hành vi hoặc nhập mô tả';
-    }
-    if (!count || count <= 0) errors.count = 'Số lần phải lớn hơn 0';
-    if (scorePerUnit < 0) errors.score = 'Điểm mỗi lần không được âm';
-
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      return;
-    }
-
-    setFormErrors({});
-
-    const d = new Date(newDate);
-    const month = d.getMonth() + 1;
-    const behCode = selectedCategory ? selectedCategory.code : 'KHT';
-    const behDesc = customDescription.trim() || (selectedCategory ? selectedCategory.name : '');
-
-    const logPayload = {
-      date: newDate,
-      month,
-      weekNumber: Number(newWeek),
-      studentId: selectedStudent!.id,
-      studentCode: selectedStudent!.studentCode,
-      studentName: selectedStudent!.fullName,
-      behaviorCode: behCode,
-      behaviorDescription: behDesc,
-      type: newType,
-      scorePerUnit: Number(scorePerUnit),
-      count: Number(count),
-      periodOrTime: periodOrTime.trim(),
-      reporter: reporter.trim() || classConfig.homeroomTeacher,
-      basisOrRegulation: basisOrRegulation.trim() || (selectedCategory?.basisOrRegulation || ''),
-      note: note.trim(),
-    };
-
-    if (!overrideDuplicate) {
-      // Check duplicate
-      const duplicateExists = disciplineLogs.some(
-        (l) =>
-          l.studentId === logPayload.studentId &&
-          l.date === logPayload.date &&
-          l.behaviorCode.toUpperCase() === logPayload.behaviorCode.toUpperCase() &&
-          l.periodOrTime === logPayload.periodOrTime
-      );
-
-      if (duplicateExists) {
-        setPendingLogToSave(logPayload);
-        setShowDuplicateWarning(true);
-        return;
-      }
-    }
-
-    await addDisciplineLog(logPayload);
-    handleResetModal();
-    onCloseModal();
-  };
-
-  const handleResetModal = () => {
-    setSelectedStudent(null);
-    setStudentSearchQuery('');
-    setSelectedCategory(null);
-    setCustomDescription('');
-    setNewType('deduct');
-    setScorePerUnit(1);
-    setCount(1);
-    setNote('');
-    setBasisOrRegulation('');
-    setFormErrors({});
-    setShowDuplicateWarning(false);
-    setPendingLogToSave(null);
-  };
 
   // Export to Excel
   const handleExportExcel = () => {
@@ -598,466 +443,126 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
         </div>
       </div>
 
-      {/* MODAL: Thêm ghi nhận mới */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700 my-8">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
-              <div>
-                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <PlusCircle className="h-5 w-5 text-blue-600" />
-                  <span>Thêm Ghi Nhận Nề Nếp Mới</span>
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Lớp {classConfig.className} • Năm học {classConfig.schoolYear}
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  handleResetModal();
-                  onCloseModal();
-                }}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-4">
-              {/* Row 1: Ngày & Tuần học */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Ngày vi phạm/khen thưởng *
-                  </label>
-                  <input
-                    type="date"
-                    value={newDate}
-                    onChange={(e) => handleDateChange(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                  {formErrors.date && <p className="text-xs text-rose-500 mt-1">{formErrors.date}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Tuần học (Tự đề xuất theo lịch) *
-                  </label>
-                  <select
-                    value={newWeek}
-                    onChange={(e) => setNewWeek(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
-                    {classConfig.weeks.map((w) => (
-                      <option key={w.weekNumber} value={w.weekNumber}>
-                        Tuần {w.weekNumber} ({formatVietnameseDate(w.startDate).slice(0, 5)} - {formatVietnameseDate(w.endDate).slice(0, 5)})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Row 2: Chọn Học sinh */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Chọn học sinh *
-                </label>
-                {selectedStudent ? (
-                  <div className="flex items-center justify-between p-2.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-blue-900 dark:text-blue-200">
-                        {selectedStudent.fullName}
-                      </span>
-                      <span className="text-xs font-mono px-2 py-0.5 bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-100 rounded-md">
-                        {selectedStudent.studentCode}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setSelectedStudent(null)}
-                      className="text-xs text-rose-600 hover:underline font-semibold"
-                    >
-                      Đổi học sinh
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="relative">
-                      <Search className="h-4 w-4 text-slate-400 absolute left-3 top-2.5" />
-                      <input
-                        type="text"
-                        placeholder="Gõ tên hoặc mã học sinh (vd: An, HS10A801)..."
-                        value={studentSearchQuery}
-                        onChange={(e) => setStudentSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div className="max-h-36 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
-                      {filteredStudentsForSelect.map((s) => (
-                        <div
-                          key={s.id}
-                          onClick={() => {
-                            setSelectedStudent(s);
-                            setStudentSearchQuery('');
-                          }}
-                          className="px-3 py-2 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer flex items-center justify-between text-xs transition"
-                        >
-                          <span className="font-bold text-slate-900 dark:text-white">
-                            {s.fullName}
-                          </span>
-                          <span className="font-mono text-slate-500">{s.studentCode}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {formErrors.student && <p className="text-xs text-rose-500 mt-1">{formErrors.student}</p>}
-              </div>
-
-              {/* Row 3: Chọn Danh mục hành vi hoặc Nhập mô tả */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Chọn hành vi từ danh mục quy định
-                </label>
-                <select
-                  value={selectedCategory ? selectedCategory.id : ''}
-                  onChange={(e) => {
-                    const found = behaviorCategories.find((c) => c.id === e.target.value);
-                    if (found) {
-                      handleApplySuggestion(found);
-                    } else {
-                      setSelectedCategory(null);
-                    }
-                  }}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                >
-                  <option value="">-- Chọn trong danh mục chuẩn (hoặc nhập mô tả tự do bên dưới) --</option>
-                  <optgroup label="Danh mục Vi phạm (Điểm trừ)">
-                    {behaviorCategories
-                      .filter((c) => c.type === 'deduct')
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          [{c.code}] -{formatVietnameseNumber(c.defaultScore)}đ: {c.name.slice(0, 70)}...
-                        </option>
-                      ))}
-                  </optgroup>
-                  <optgroup label="Danh mục Khen thưởng (Điểm cộng)">
-                    {behaviorCategories
-                      .filter((c) => c.type === 'bonus')
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          [{c.code}] +{formatVietnameseNumber(c.defaultScore)}đ: {c.name.slice(0, 70)}...
-                        </option>
-                      ))}
-                  </optgroup>
-                </select>
-              </div>
-
-              {/* Mô tả tự do & Gợi ý từ khóa tiếng Việt */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Mô tả chi tiết hành vi
-                </label>
-                <input
-                  type="text"
-                  placeholder="Nhập mô tả cụ thể (vd: đi muộn 15p, sử dụng điện thoại trong giờ Toán, nhặt được của rơi...)"
-                  value={customDescription}
-                  onChange={(e) => setCustomDescription(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-
-                {/* Keyword match suggestions banner */}
-                {keywordSuggestions.length > 0 && (
-                  <div className="mt-2 p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-200 font-semibold">
-                      <Lightbulb className="h-4 w-4 text-amber-600" />
-                      <span>Gợi ý danh mục phù hợp từ khóa (Giáo viên nhấn để xác nhận):</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {keywordSuggestions.map((cat) => (
-                        <button
-                          key={cat.id}
-                          type="button"
-                          onClick={() => handleApplySuggestion(cat)}
-                          className="px-2.5 py-1 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-slate-800 dark:text-slate-200 hover:bg-amber-100 rounded-lg text-xs font-medium flex items-center gap-1 transition"
-                        >
-                          <span className="font-bold text-amber-700 dark:text-amber-400">[{cat.code}]</span>
-                          <span>{cat.type === 'deduct' ? '-' : '+'}{formatVietnameseNumber(cat.defaultScore)}đ</span>
-                          <span className="text-slate-500 max-w-[120px] truncate">({cat.name.slice(0, 25)}...)</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {formErrors.behavior && <p className="text-xs text-rose-500 mt-1">{formErrors.behavior}</p>}
-              </div>
-
-              {/* Loại, Điểm mỗi lần & Số lần */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Loại hành vi
-                  </label>
-                  <select
-                    value={newType}
-                    onChange={(e) => setNewType(e.target.value as BehaviorType)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
-                    <option value="deduct">Vi phạm (Điểm trừ)</option>
-                    <option value="bonus">Khen thưởng (Điểm cộng)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Điểm mỗi lần
-                  </label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    max="10"
-                    value={scorePerUnit}
-                    onChange={(e) => setScorePerUnit(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                  {formErrors.score && <p className="text-xs text-rose-500 mt-1">{formErrors.score}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Số lần
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={count}
-                    onChange={(e) => setCount(Math.max(1, Number(e.target.value)))}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Tiết học & Người ghi nhận */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Tiết / Thời gian
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="vd: Tiết 1, Tiết 4, Ra chơi, Giờ sinh hoạt..."
-                    value={periodOrTime}
-                    onChange={(e) => setPeriodOrTime(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Người ghi nhận
-                  </label>
-                  <input
-                    type="text"
-                    value={reporter}
-                    onChange={(e) => setReporter(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Ghi chú */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Ghi chú sư phạm (Tùy chọn)
-                </label>
-                <input
-                  type="text"
-                  placeholder="vd: Đã nhắc nhở, phụ huynh có đơn xin phép, hứa khắc phục..."
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-              </div>
-
-              {/* LIVE SCORE PREVIEW BANNER */}
-              <div
-                className={`p-3.5 rounded-xl border flex items-center justify-between ${
-                  newType === 'deduct'
-                    ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-200'
-                    : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-200'
-                }`}
-              >
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-wider block">
-                    Bản xem trước tính điểm:
-                  </span>
-                  <span className="text-xs font-mono">
-                    {formatVietnameseNumber(scorePerUnit)}đ × {count} lần ={' '}
-                    <strong>
-                      {newType === 'deduct' ? 'Điểm trừ' : 'Điểm cộng'} {formatVietnameseNumber(scorePerUnit * count)}đ
-                    </strong>
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-2xl font-black font-mono">
-                    {newType === 'deduct' ? '-' : '+'}
-                    {formatVietnameseNumber(scorePerUnit * count)}đ
-                  </span>
-                </div>
-              </div>
-
-              {/* Duplicate Warning Dialog */}
-              {showDuplicateWarning && (
-                <div className="p-3.5 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 rounded-xl text-xs space-y-2">
-                  <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-bold">
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    <span>Cảnh báo: Có khả năng trùng bản ghi!</span>
-                  </div>
-                  <p className="text-slate-600 dark:text-slate-300">
-                    Học sinh <strong>{selectedStudent?.fullName}</strong> đã có một bản ghi cùng ngày{' '}
-                    {formatVietnameseDate(newDate)}, mã hành vi và tiết học này. Bạn có chắc chắn muốn ghi nhận thêm lần nữa không?
-                  </p>
-                  <div className="flex gap-2 justify-end pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setShowDuplicateWarning(false)}
-                      className="px-3 py-1 bg-slate-200 dark:bg-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-medium"
-                    >
-                      Hủy bỏ
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleValidateAndSave(true)}
-                      className="px-3 py-1 bg-amber-600 text-white rounded-lg font-bold hover:bg-amber-500"
-                    >
-                      Xác nhận vẫn lưu
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Actions */}
-            <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  handleResetModal();
-                  onCloseModal();
-                }}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-semibold rounded-xl transition"
-              >
-                Đóng
-              </button>
-              <button
-                type="button"
-                onClick={() => handleValidateAndSave(false)}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-bold rounded-xl shadow-md transition active:scale-95"
-              >
-                Lưu vào nhật ký
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* V2 MODAL: SỔ CHẤM ĐIỂM HÔM NAY (Single & Bulk Logging, Search-First, Period Lock Guard) */}
+      <DailyLogModalV2
+        isOpen={isModalOpen}
+        onClose={onCloseModal}
+      />
 
       {/* MODAL: Chỉnh sửa bản ghi */}
-      {editingLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
-              <Edit2 className="h-5 w-5 text-blue-600" />
-              <span>Chỉnh Sửa Ghi Nhận Nhật Ký</span>
-            </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Học sinh: <strong className="text-slate-800 dark:text-slate-200">{editingLog.studentName}</strong> (
-              {editingLog.studentCode}) • Ngày: {formatVietnameseDate(editingLog.date)}
-            </p>
+      {editingLog && (() => {
+        const isEditLocked = isPeriodLocked('week', editingLog.weekNumber);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
+                <Edit2 className="h-5 w-5 text-blue-600" />
+                <span>Chỉnh Sửa Ghi Nhận Nhật Ký</span>
+              </h3>
+              <p className="text-xs text-slate-500 mb-4">
+                Học sinh: <strong className="text-slate-800 dark:text-slate-200">{editingLog.studentName}</strong> (
+                {editingLog.studentCode}) • Ngày: {formatVietnameseDate(editingLog.date)} (Tuần {editingLog.weekNumber})
+              </p>
 
-            <div className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-semibold mb-1">Mô tả hành vi</label>
-                <input
-                  type="text"
-                  value={editingLog.behaviorDescription}
-                  onChange={(e) => setEditingLog({ ...editingLog, behaviorDescription: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl"
-                />
-              </div>
+              {isEditLocked && (
+                <div className="p-3 mb-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500" />
+                  <span>Tuần {editingLog.weekNumber} đã được Ban Giám Hiệu khóa thi đua. Không thể chỉnh sửa bản ghi này.</span>
+                </div>
+              )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3.5 text-xs">
                 <div>
-                  <label className="block font-semibold mb-1">Điểm mỗi lần</label>
+                  <label className="block font-semibold mb-1">Mô tả hành vi</label>
                   <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    value={editingLog.scorePerUnit}
-                    onChange={(e) => setEditingLog({ ...editingLog, scorePerUnit: Number(e.target.value) })}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl"
+                    type="text"
+                    disabled={isEditLocked}
+                    value={editingLog.behaviorDescription}
+                    onChange={(e) => setEditingLog({ ...editingLog, behaviorDescription: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl disabled:opacity-60"
                   />
                 </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold mb-1">Điểm mỗi lần</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      disabled={isEditLocked}
+                      value={editingLog.scorePerUnit}
+                      onChange={(e) => setEditingLog({ ...editingLog, scorePerUnit: Number(e.target.value) })}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl disabled:opacity-60"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">Số lần</label>
+                    <input
+                      type="number"
+                      min="1"
+                      disabled={isEditLocked}
+                      value={editingLog.count}
+                      onChange={(e) => setEditingLog({ ...editingLog, count: Math.max(1, Number(e.target.value)) })}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl disabled:opacity-60"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block font-semibold mb-1">Số lần</label>
+                  <label className="block font-semibold mb-1">Ghi chú</label>
                   <input
-                    type="number"
-                    min="1"
-                    value={editingLog.count}
-                    onChange={(e) => setEditingLog({ ...editingLog, count: Math.max(1, Number(e.target.value)) })}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl"
+                    type="text"
+                    disabled={isEditLocked}
+                    value={editingLog.note || ''}
+                    onChange={(e) => setEditingLog({ ...editingLog, note: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl disabled:opacity-60"
                   />
+                </div>
+
+                <div className="p-3 bg-slate-50 dark:bg-slate-750 rounded-xl border flex justify-between items-center font-mono">
+                  <span>Tổng điểm sau chỉnh sửa:</span>
+                  <span className="font-bold text-base">
+                    {editingLog.type === 'deduct' ? '-' : '+'}
+                    {formatVietnameseNumber(editingLog.scorePerUnit * editingLog.count)}đ
+                  </span>
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold mb-1">Ghi chú</label>
-                <input
-                  type="text"
-                  value={editingLog.note || ''}
-                  onChange={(e) => setEditingLog({ ...editingLog, note: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl"
-                />
+              <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingLog(null)}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Đóng
+                </button>
+                <button
+                  type="button"
+                  disabled={isEditLocked}
+                  onClick={async () => {
+                    if (isEditLocked) return;
+                    await updateDisciplineLog(
+                      editingLog.id,
+                      {
+                        behaviorDescription: editingLog.behaviorDescription,
+                        scorePerUnit: editingLog.scorePerUnit,
+                        count: editingLog.count,
+                        note: editingLog.note,
+                      },
+                      classConfig.homeroomTeacher
+                    );
+                    setEditingLog(null);
+                  }}
+                  className="px-4 py-2 bg-blue-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold hover:bg-blue-500 cursor-pointer"
+                >
+                  Cập nhật bản ghi
+                </button>
               </div>
-
-              <div className="p-3 bg-slate-50 dark:bg-slate-750 rounded-xl border flex justify-between items-center font-mono">
-                <span>Tổng điểm sau chỉnh sửa:</span>
-                <span className="font-bold text-base">
-                  {editingLog.type === 'deduct' ? '-' : '+'}
-                  {formatVietnameseNumber(editingLog.scorePerUnit * editingLog.count)}đ
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2">
-              <button
-                onClick={() => setEditingLog(null)}
-                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={async () => {
-                  await updateDisciplineLog(
-                    editingLog.id,
-                    {
-                      behaviorDescription: editingLog.behaviorDescription,
-                      scorePerUnit: editingLog.scorePerUnit,
-                      count: editingLog.count,
-                      note: editingLog.note,
-                    },
-                    classConfig.homeroomTeacher
-                  );
-                  setEditingLog(null);
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-500"
-              >
-                Cập nhật bản ghi
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* MODAL: Lịch sử chỉnh sửa */}
       {historyLog && (
@@ -1099,34 +604,51 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
       )}
 
       {/* MODAL: Xác nhận xóa bản ghi */}
-      {deletingLogId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-700 text-center">
-            <AlertTriangle className="h-10 w-10 text-rose-500 mx-auto mb-3" />
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">Xóa bản ghi nhật ký?</h3>
-            <p className="text-xs text-slate-500 mt-1 mb-4">
-              Điểm rèn luyện của học sinh và tổng kết tuần/tháng sẽ tự động được tính toán lại ngay sau khi xóa.
-            </p>
-            <div className="flex justify-center gap-2">
-              <button
-                onClick={() => setDeletingLogId(null)}
-                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={async () => {
-                  await deleteDisciplineLog(deletingLogId, classConfig.homeroomTeacher);
-                  setDeletingLogId(null);
-                }}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold"
-              >
-                Đồng ý xóa
-              </button>
+      {deletingLogId && (() => {
+        const targetLog = disciplineLogs.find((l) => l.id === deletingLogId);
+        const isDeleteLocked = targetLog ? isPeriodLocked('week', targetLog.weekNumber) : false;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-700 text-center">
+              <AlertTriangle className="h-10 w-10 text-rose-500 mx-auto mb-3" />
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Xóa bản ghi nhật ký?</h3>
+
+              {isDeleteLocked ? (
+                <div className="p-3 my-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-700 dark:text-rose-300 text-left flex items-center gap-2">
+                  <Lock className="h-4 w-4 shrink-0 text-rose-500" />
+                  <span>Tuần {targetLog?.weekNumber} đã được Ban Giám Hiệu khóa thi đua. Không thể xóa bản ghi này.</span>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 mt-1 mb-4">
+                  Điểm rèn luyện của học sinh và tổng kết tuần/tháng sẽ tự động được tính toán lại ngay sau khi xóa.
+                </p>
+              )}
+
+              <div className="flex justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDeletingLogId(null)}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  {isDeleteLocked ? 'Đóng' : 'Hủy'}
+                </button>
+                {!isDeleteLocked && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await deleteDisciplineLog(deletingLogId, classConfig.homeroomTeacher);
+                      setDeletingLogId(null);
+                    }}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold cursor-pointer"
+                  >
+                    Đồng ý xóa
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* MODAL: Tải lên nhật ký lỗi từ Excel/CSV */}
       <ImportDisciplineLogsModal

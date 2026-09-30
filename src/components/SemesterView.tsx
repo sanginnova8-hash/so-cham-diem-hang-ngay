@@ -17,6 +17,7 @@ import {
 } from '../lib/utils';
 import { TabType } from './Navbar';
 import { SummaryZaloExportModal } from './SummaryZaloExportModal';
+import { PeriodLockBannerV2 } from './v2/PeriodLockBannerV2';
 
 interface SemesterViewProps {
   onNavigateTab: (tab: TabType) => void;
@@ -27,7 +28,7 @@ export const SemesterView: React.FC<SemesterViewProps> = ({
   onNavigateTab,
   onSelectStudentForReport,
 }) => {
-  const { classConfig, getSemesterSummary, updateClassConfig } = useApp();
+  const { classConfig, getSemesterSummary, updateClassConfig, isPeriodLocked } = useApp();
 
   const [activeSemester, setActiveSemester] = useState<1 | 2>(1);
   const [showConfigMonths, setShowConfigMonths] = useState<boolean>(false);
@@ -195,6 +196,13 @@ export const SemesterView: React.FC<SemesterViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Period Lock Banner V2 */}
+      <PeriodLockBannerV2
+        periodType="semester"
+        periodValue={activeSemester}
+        periodTitle={`Bảng Tổng Kết Điểm Rèn Luyện Học Kỳ ${activeSemester}`}
+      />
 
       {/* Month Config Drawer / Accordion */}
       {showConfigMonths && (
