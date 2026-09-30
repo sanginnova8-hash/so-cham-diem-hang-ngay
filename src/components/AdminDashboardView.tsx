@@ -234,7 +234,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Thi đua toàn trường
+              🏫 Lớp học ({schoolClasses.length})
             </button>
             <button
               type="button"
@@ -245,7 +245,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Tài khoản & Phân quyền ({userAccounts.length})
+              👥 Người dùng & Phân công ({userAccounts.length})
             </button>
             <button
               type="button"
@@ -256,7 +256,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Khóa sổ thi đua
+              🔒 Khóa sổ thi đua
             </button>
             <button
               type="button"
@@ -267,7 +267,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Hạ tầng & Sao lưu
+              ⚙️ Hệ thống & Sao lưu
             </button>
           </div>
         </div>

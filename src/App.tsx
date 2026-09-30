@@ -22,7 +22,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { MobileBottomNav } from './components/MobileBottomNav';
 
 function MainApp() {
-  const { classConfig, userRole } = useApp();
+  const { classConfig, userRole, activeAccount } = useApp();
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     return userRole === 'guest' ? 'portal' : 'dashboard';
   });
@@ -230,18 +230,24 @@ function MainApp() {
           />
         </main>
 
-        {/* Ergonomic Mobile Bottom Nav Bar (Thumb-zone UX) */}
-        <MobileBottomNav
-          activeTab={activeTab}
-          onNavigateTab={setActiveTab}
-          onOpenNewLogModal={() => setIsNewLogModalOpen(true)}
-        />
+        {/* Ergonomic Mobile Bottom Nav Bar (Thumb-zone UX) - Only for authenticated staff in workspace */}
+        {activeAccount && userRole !== 'guest' && activeTab !== 'portal' && (
+          <MobileBottomNav
+            activeTab={activeTab}
+            onNavigateTab={setActiveTab}
+            onOpenNewLogModal={() => setIsNewLogModalOpen(true)}
+          />
+        )}
 
-        {/* Clean Footer */}
+        {/* Clean Footer with strict role-based information */}
         <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-3.5 text-center text-xs text-slate-500 print:hidden mb-16 md:mb-0">
           <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
             <span>
-              Sổ Chấm Điểm Hàng Ngày • Lớp {classConfig.className} • {classConfig.schoolName ? `${classConfig.schoolName} • ` : ''}Niên khóa {classConfig.schoolYear} • GVCN: {classConfig.homeroomTeacher}
+              {activeAccount && userRole !== 'guest' && activeTab !== 'portal'
+                ? userRole === 'admin' || userRole === 'owner'
+                  ? `Trường Cao Đẳng Nghề Số 1 - BQP • Bảng điều khiển quản trị • Năm học ${classConfig.schoolYear || '2025–2026'}`
+                  : `Sổ Chấm Điểm Hàng Ngày • Lớp ${classConfig.className} • Năm học ${classConfig.schoolYear || '2025–2026'} • GVCN: ${classConfig.homeroomTeacher || activeAccount.displayName}`
+                : 'Trường Cao Đẳng Nghề Số 1 - Bộ Quốc Phòng • Cổng Thông Tin & Tra Cứu Nề Nếp Học Viên'}
             </span>
             <span className="text-slate-400">
               Hệ thống quản lý nề nếp & thi đua học sinh chuyên nghiệp

@@ -244,7 +244,7 @@ GVCN: ${classConfig.homeroomTeacher} - SĐT: ${classConfig.teacherPhone || 'Chư
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        Lớp: {classConfig.className} • Năm học {classConfig.schoolYear} • GVCN: {classConfig.homeroomTeacher}
+                        Học viên Trường CĐ Nghề 01 - BQP • Năm học {classConfig.schoolYear || '2025–2026'}
                       </p>
                     </div>
 
@@ -332,164 +332,29 @@ GVCN: ${classConfig.homeroomTeacher} - SĐT: ${classConfig.teacherPhone || 'Chư
         </div>
       </section>
 
-      {/* SECURE ACCESS CONTROL INTRODUCTION */}
-      <section className="bg-slate-100 dark:bg-slate-850 p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 space-y-5">
-        <div className="text-center max-w-xl mx-auto space-y-1">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-bold">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            <span>Hệ Thống Phân Quyền Bảo Mật Chuẩn Quân Sự (RBAC)</span>
+      {/* Khu vực đăng nhập dành cho Cán bộ & Giáo viên */}
+      <section className="bg-gradient-to-r from-blue-900 to-indigo-950 text-white p-6 sm:p-8 rounded-3xl shadow-xl flex flex-col md:flex-row items-center justify-between gap-6 border border-blue-800/50">
+        <div className="space-y-2 text-center md:text-left">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-bold border border-blue-400/30">
+            <Lock className="h-3.5 w-3.5" />
+            <span>Khu Vực Dành Cho Cán Bộ Giảng Dạy & Quản Trị</span>
           </div>
-          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
-            Không Gian Làm Việc Xác Thực Định Danh Độc Lập
+          <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+            Không Gian Quản Lý Sổ Chấm Điểm & Nề Nếp
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Hệ thống áp dụng chính sách bảo mật đa cấp, mã hóa định danh và bảo đảm dữ liệu của từng lớp được lưu trữ độc lập trên CSDL Cloud Firestore.
+          <p className="text-xs sm:text-sm text-blue-200/80 max-w-xl">
+            Thầy/cô giáo viên chủ nhiệm và Ban Giám Hiệu vui lòng đăng nhập để vào sổ chấm điểm nề nếp hàng ngày, tổng hợp thi đua tuần/tháng và gửi thông báo cho phụ huynh.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
-          {/* Level 3: Admin */}
-          <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
-                  Cấp độ 3: Ban Quản Trị Hệ Thống
-                </span>
-                <ShieldCheck className="h-5 w-5 text-purple-600" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                Ban Giám Hiệu & Quản Trị Viên
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Giám sát thi đua nề nếp toàn trường, chế độ thanh tra chuyên môn từng lớp, quản trị danh sách giáo viên và khóa sổ thi đua định kỳ.
-              </p>
-            </div>
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-700/80 text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
-              <Lock className="h-3.5 w-3.5 text-purple-500" />
-              <span>Yêu cầu đăng nhập xác thực tài khoản</span>
-            </div>
-          </div>
-
-          {/* Level 2: Teacher */}
-          <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                  Cấp độ 2: Giáo Viên Chủ Nhiệm
-                </span>
-                <UserCheck className="h-5 w-5 text-blue-600" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                Không Gian Lớp Chủ Nhiệm
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Mỗi giáo viên sở hữu CSDL độc lập của lớp mình: chấm điểm hằng ngày, quản lý học sinh, tổng kết tuần/tháng, soạn tin Zalo tự động.
-              </p>
-            </div>
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-700/80 text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
-              <Lock className="h-3.5 w-3.5 text-blue-500" />
-              <span>Dữ liệu cô lập • Không thể truy cập chéo</span>
-            </div>
-          </div>
-
-          {/* Level 1: Public */}
-          <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                  Cấp độ 1: Phụ Huynh & Học Sinh
-                </span>
-                <Globe className="h-5 w-5 text-emerald-600" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                Cổng Tra Cứu Riêng Tư
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Tra cứu kết quả rèn luyện từng cá nhân thông qua Mã học sinh. Không công khai danh sách lớp, bảo mật thông tin gia đình học viên.
-              </p>
-            </div>
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-700/80 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              <span>Truy cập công khai an toàn</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="text-center pt-2">
-          <button
-            type="button"
-            onClick={onOpenLoginModal}
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition inline-flex items-center gap-2 cursor-pointer active:scale-95"
-          >
-            <LogIn className="h-4 w-4" />
-            <span>Đăng Nhập Cổng Giáo Viên & Quản Trị</span>
-          </button>
-        </div>
-      </section>
-
-      {/* RBAC MATRIX EXPLANATION */}
-      <section className="bg-white dark:bg-slate-800 p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
-        <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-blue-600" />
-          <span>Bảng Đối Chiếu Ma Trận Phân Quyền 3 Cấp Độ (RBAC Matrix)</span>
-        </h2>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-700 dark:text-slate-300 font-bold">
-                <th className="py-2.5 px-3">Nghiệp vụ / Chức năng</th>
-                <th className="py-2.5 px-3 text-center">Khách / Phụ huynh (Cấp 1)</th>
-                <th className="py-2.5 px-3 text-center">Giáo viên chủ nhiệm (Cấp 2)</th>
-                <th className="py-2.5 px-3 text-center">Quản trị viên / BGH (Cấp 3)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60 text-slate-600 dark:text-slate-400">
-              <tr>
-                <td className="py-2 px-3 font-medium text-slate-900 dark:text-white">Xem trang chủ & quy chế nề nếp</td>
-                <td className="py-2 px-3 text-center text-emerald-600 font-bold">✅ Được xem</td>
-                <td className="py-2 px-3 text-center text-emerald-600 font-bold">✅ Được xem</td>
-                <td className="py-2 px-3 text-center text-emerald-600 font-bold">✅ Được xem</td>
-              </tr>
-              <tr>
-                <td className="py-2 px-3 font-medium text-slate-900 dark:text-white">Tra cứu điểm cá nhân (nhập Mã HS)</td>
-                <td className="py-2 px-3 text-center text-emerald-600 font-bold">✅ Chỉ 01 HS đó</td>
-                <td className="py-2 px-3 text-center text-emerald-600 font-bold">✅ Toàn lớp</td>
-                <td className="py-2 px-3 text-center text-emerald-600 font-bold">✅ Toàn trường</td>
-              </tr>
-              <tr>
-                <td className="py-2 px-3 font-medium text-slate-900 dark:text-white">Chấm điểm & Ghi nhận vi phạm/thưởng hàng ngày</td>
-                <td className="py-2 px-3 text-center text-rose-500 font-bold">❌ Bị ẩn</td>
-                <td className="py-2 px-3 text-center text-emerald-600 font-bold">✅ Lớp chủ nhiệm</td>
-                <td className="py-2 px-3 text-center text-emerald-600 font-bold">✅ Toàn trường</td>
-              </tr>
-              <tr>
-                <td className="py-2 px-3 font-medium text-slate-900 dark:text-white">Thêm, sửa, xóa học sinh & thông tin lớp</td>
-                <td className="py-2 px-3 text-center text-rose-500 font-bold">❌ Bị ẩn</td>
-                <td className="py-2 px-3 text-center text-emerald-600 font-bold">✅ Lớp của mình</td>
-                <td className="py-2 px-3 text-center text-emerald-600 font-bold">✅ Mọi lớp</td>
-              </tr>
-              <tr>
-                <td className="py-2 px-3 font-medium text-slate-900 dark:text-white">Xem dữ liệu của giáo viên / lớp khác</td>
-                <td className="py-2 px-3 text-center text-rose-500 font-bold">❌ Bị cấm</td>
-                <td className="py-2 px-3 text-center text-rose-500 font-bold">❌ Bảo mật độc lập</td>
-                <td className="py-2 px-3 text-center text-emerald-600 font-bold">✅ Chế độ thanh tra</td>
-              </tr>
-              <tr>
-                <td className="py-2 px-3 font-medium text-slate-900 dark:text-white">Khóa sổ thi đua tuần/tháng (chống sửa điểm)</td>
-                <td className="py-2 px-3 text-center text-rose-500 font-bold">❌ Không có quyền</td>
-                <td className="py-2 px-3 text-center text-rose-500 font-bold">❌ Tuân thủ khóa</td>
-                <td className="py-2 px-3 text-center text-emerald-600 font-bold">✅ Quyền Admin</td>
-              </tr>
-              <tr>
-                <td className="py-2 px-3 font-medium text-slate-900 dark:text-white">Quản lý tài khoản giáo viên & Cấp lại mật khẩu</td>
-                <td className="py-2 px-3 text-center text-rose-500 font-bold">❌ Không có quyền</td>
-                <td className="py-2 px-3 text-center text-rose-500 font-bold">❌ Không có quyền</td>
-                <td className="py-2 px-3 text-center text-emerald-600 font-bold">✅ Quyền Admin</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <button
+          type="button"
+          onClick={onOpenLoginModal}
+          className="px-6 py-3.5 bg-blue-500 hover:bg-blue-400 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-lg shadow-blue-500/30 transition flex items-center gap-2.5 cursor-pointer active:scale-95 shrink-0 tracking-wide uppercase"
+        >
+          <LogIn className="h-4 w-4" />
+          <span>ĐĂNG NHẬP KHÔNG GIAN LÀM VIỆC</span>
+        </button>
       </section>
     </div>
   );

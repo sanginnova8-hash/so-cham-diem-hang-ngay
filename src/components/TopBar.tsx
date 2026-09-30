@@ -13,6 +13,7 @@ import {
   LogOut,
   Sparkles,
   LogIn,
+  School,
 } from 'lucide-react';
 import { TabType } from './Navbar';
 import { useApp } from '../context/AppContext';
@@ -77,32 +78,43 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   const currentTabInfo = TAB_LABELS[activeTab] || { section: 'Hệ thống', title: 'Trang chính' };
 
+  const isGuestOrPortal = userRole === 'guest' || activeTab === 'portal' || !activeAccount;
+
   return (
     <header className="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-xs print:hidden">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex items-center justify-between gap-3">
-        {/* Left: Mobile Drawer Trigger + Class Badge & Breadcrumb */}
+        {/* Left: Mobile Drawer Trigger + Class Badge / School Institution & Breadcrumb */}
         <div className="flex items-center gap-3 min-w-0">
-          {/* Mobile hamburger button */}
-          <button
-            type="button"
-            onClick={onToggleMobileSidebar}
-            className="md:hidden p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-            aria-label="Mở menu danh mục"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-
-          {/* Class identifier pill with edit shortcut */}
-          <div className="flex items-center gap-2 min-w-0">
+          {/* Mobile hamburger button - Only for logged-in workspace */}
+          {!isGuestOrPortal && (
             <button
               type="button"
-              onClick={onOpenEditClassTeacherModal}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/80 transition cursor-pointer shrink-0"
-              title="Nhấn để đổi thông tin giáo viên hoặc lớp chủ nhiệm"
+              onClick={onToggleMobileSidebar}
+              className="md:hidden p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              aria-label="Mở menu danh mục"
             >
-              <span>Lớp {classConfig.className}</span>
-              <Edit2 className="h-3 w-3 opacity-60" />
+              <Menu className="h-5 w-5" />
             </button>
+          )}
+
+          {/* Badge: Show Class Pill when authenticated, School name when guest / public portal */}
+          <div className="flex items-center gap-2 min-w-0">
+            {!isGuestOrPortal ? (
+              <button
+                type="button"
+                onClick={onOpenEditClassTeacherModal}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/80 transition cursor-pointer shrink-0"
+                title="Nhấn để đổi thông tin giáo viên hoặc lớp chủ nhiệm"
+              >
+                <span>Lớp {classConfig.className}</span>
+                <Edit2 className="h-3 w-3 opacity-60" />
+              </button>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shrink-0">
+                <School className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                <span>Trường CĐ Nghề 01 - BQP</span>
+              </div>
+            )}
 
             {/* Breadcrumb View Title */}
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 truncate">
@@ -117,19 +129,21 @@ export const TopBar: React.FC<TopBarProps> = ({
 
         {/* Right: Quick Search + CTA '+ GHI NHẬN' + Cloud + Profile */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* Search Bar / Command Palette shortcut */}
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent('open-command-palette'))}
-            className="flex items-center gap-2 px-2.5 sm:px-3 py-1.5 bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 text-xs transition active:scale-95 cursor-pointer shadow-2xs"
-            title="Tìm kiếm học sinh hoặc chức năng (⌘K hoặc Ctrl+K)"
-          >
-            <Search className="h-3.5 w-3.5 text-blue-500 dark:text-blue-400" />
-            <span className="hidden md:inline text-xs font-medium">Tìm kiếm...</span>
-            <kbd className="hidden lg:inline-block px-1.5 py-0.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 font-mono text-[10px] rounded border border-slate-200 dark:border-slate-600 shadow-2xs">
-              ⌘K
-            </kbd>
-          </button>
+          {/* Search Bar / Command Palette shortcut - Only for authenticated staff */}
+          {!isGuestOrPortal && (
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('open-command-palette'))}
+              className="flex items-center gap-2 px-2.5 sm:px-3 py-1.5 bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 text-xs transition active:scale-95 cursor-pointer shadow-2xs"
+              title="Tìm kiếm học sinh hoặc chức năng (⌘K hoặc Ctrl+K)"
+            >
+              <Search className="h-3.5 w-3.5 text-blue-500 dark:text-blue-400" />
+              <span className="hidden md:inline text-xs font-medium">Tìm kiếm...</span>
+              <kbd className="hidden lg:inline-block px-1.5 py-0.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 font-mono text-[10px] rounded border border-slate-200 dark:border-slate-600 shadow-2xs">
+                ⌘K
+              </kbd>
+            </button>
+          )}
 
           {/* Prominent Primary CTA Button '+ GHI NHẬN' */}
           {!inspectorModeClass && userRole !== 'guest' && (
@@ -144,20 +158,22 @@ export const TopBar: React.FC<TopBarProps> = ({
             </button>
           )}
 
-          {/* Cloud Firestore Sync Dot */}
-          <div
-            onClick={syncLocalToCloud}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 hover:border-emerald-500/50 transition cursor-pointer text-xs"
-            title="Dữ liệu lưu trữ trên Firebase Firestore. Bấm để đồng bộ lại."
-          >
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <Cloud className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-            <RefreshCw
-              className={`h-3 w-3 text-slate-400 ${
-                isCloudSyncing ? 'animate-spin text-blue-500' : ''
-              }`}
-            />
-          </div>
+          {/* Cloud Firestore Sync Dot - Only for authenticated staff */}
+          {!isGuestOrPortal && (
+            <div
+              onClick={syncLocalToCloud}
+              className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 hover:border-emerald-500/50 transition cursor-pointer text-xs"
+              title="Dữ liệu lưu trữ trên Firebase Firestore. Bấm để đồng bộ lại."
+            >
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <Cloud className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              <RefreshCw
+                className={`h-3 w-3 text-slate-400 ${
+                  isCloudSyncing ? 'animate-spin text-blue-500' : ''
+                }`}
+              />
+            </div>
+          )}
 
           <PWAInstallButton />
 

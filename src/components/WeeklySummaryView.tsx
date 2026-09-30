@@ -71,7 +71,9 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
   // Modals for achievement awards
   const [isAutoAwardModalOpen, setIsAutoAwardModalOpen] = useState(false);
   const [isCustomAwardModalOpen, setIsCustomAwardModalOpen] = useState(false);
-  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [tableSelectedStudentIds, setTableSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [modalStudentSearch, setModalStudentSearch] = useState<string>('');
   const [selectedRuleId, setSelectedRuleId] = useState<string>('');
   const [customScoreInput, setCustomScoreInput] = useState<number>(1.0);
   const [customNoteInput, setCustomNoteInput] = useState<string>('');
@@ -119,6 +121,15 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
       (r) => r.period === 'weekly' && r.isActive
     );
   }, [classConfig.achievementBonusRules]);
+
+  // Filtered students for batch award modal
+  const filteredModalStudents = useMemo(() => {
+    if (!modalStudentSearch.trim()) return students;
+    const q = modalStudentSearch.toLowerCase().trim();
+    return students.filter(
+      (s) => s.fullName.toLowerCase().includes(q) || s.studentCode.toLowerCase().includes(q)
+    );
+  }, [students, modalStudentSearch]);
 
   // Calculate summaries strictly derived from source logs
   const weeklyData = useMemo(() => {
@@ -235,35 +246,42 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
     setTimeout(() => setAwardingResult(null), 4000);
   };
 
-  // Execute Custom Award
+  // Execute Custom / Batch Award
   const handleConfirmCustomAward = async () => {
-    if (!selectedStudentId) {
-      alert('Vui lòng chọn học sinh được khen thưởng');
+    if (selectedStudentIds.length === 0) {
+      alert('Vui lòng chọn ít nhất một học sinh để cộng điểm tuần');
       return;
     }
     const rule = weeklyRules.find((r) => r.id === selectedRuleId);
+    const score = Number(customScoreInput) || 1.0;
+    const note = customNoteInput.trim() || undefined;
 
-    const res = await awardAchievementBonus({
-      studentId: selectedStudentId,
+    const res = await batchAwardAchievementBonus({
+      studentIds: selectedStudentIds,
       rule,
       weekNumber: selectedWeek,
       month: selectedMonth,
-      customScore: Number(customScoreInput) || 2.0,
-      customNote: customNoteInput.trim() || undefined,
+      customScore: score,
+      customNote: note,
     });
 
-    if (res.alreadyAwarded && rule) {
-      alert(`Học sinh này đã được trao thưởng quy chế "${rule.title}" trong tuần ${selectedWeek}.`);
-      return;
-    }
-
     setIsCustomAwardModalOpen(false);
-    setSelectedStudentId('');
+    setSelectedStudentIds([]);
+    setTableSelectedStudentIds(new Set());
     setSelectedRuleId('');
     setCustomNoteInput('');
-    const awardedTitle = rule ? rule.title : (customNoteInput.trim() || `Thành tích tuần ${selectedWeek}`);
-    setAwardingResult(`Đã trao thưởng thành tích "${awardedTitle}" (+${customScoreInput}đ) thành công!`);
-    setTimeout(() => setAwardingResult(null), 4000);
+
+    const awardedTitle = rule ? rule.title : (note || `Khen thưởng tuần ${selectedWeek}`);
+    if (res.skippedCount > 0) {
+      setAwardingResult(
+        `Đã cộng +${score}đ ("${awardedTitle}") cho ${res.awardedCount} học sinh (${res.skippedCount} em đã được trao quy chế này trước đó)!`
+      );
+    } else {
+      setAwardingResult(
+        `Đã cộng điểm tuần +${score}đ ("${awardedTitle}") thành công cho ${res.awardedCount} học sinh!`
+      );
+    }
+    setTimeout(() => setAwardingResult(null), 5000);
   };
 
   // All bonus logs for the selected week
@@ -551,15 +569,24 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
 
             <button
               onClick={() => {
+                if (tableSelectedStudentIds.size > 0) {
+                  setSelectedStudentIds(Array.from(tableSelectedStudentIds));
+                } else {
+                  setSelectedStudentIds([]);
+                }
+                setModalStudentSearch('');
                 setSelectedRuleId('');
-                setCustomScoreInput(2.0);
+                setCustomScoreInput(1.0);
                 setCustomNoteInput('');
                 setIsCustomAwardModalOpen(true);
               }}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 text-xs font-bold rounded-xl shadow-xs transition active:scale-95"
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition active:scale-95 cursor-pointer"
+              title="Cộng điểm thưởng tuần cho một hoặc nhiều học sinh cùng lúc"
             >
-              <Award className="h-4 w-4 text-amber-600" />
-              <span>Trao thưởng thành tích cá nhân</span>
+              <Award className="h-4 w-4" />
+              <span>
+                + Cộng điểm tuần {tableSelectedStudentIds.size > 0 ? `(${tableSelectedStudentIds.size} HS đã chọn)` : '(Nhiều HS)'}
+              </span>
             </button>
 
             <button
@@ -708,11 +735,27 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
       </div>
 
       {/* Main Weekly Table */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden relative">
         <div className="overflow-x-auto max-h-[650px] scrollbar-thin">
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-slate-100 dark:bg-slate-750 text-slate-700 dark:text-slate-300 uppercase tracking-wider font-semibold sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700">
               <tr>
+                <th className="py-3 px-3 w-10 text-center print:hidden">
+                  <input
+                    type="checkbox"
+                    aria-label="Chọn tất cả học sinh"
+                    checked={filteredData.length > 0 && filteredData.every((s) => tableSelectedStudentIds.has(s.studentId))}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setTableSelectedStudentIds(new Set(filteredData.map((s) => s.studentId)));
+                      } else {
+                        setTableSelectedStudentIds(new Set());
+                      }
+                    }}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    title="Chọn tất cả học sinh để cộng điểm tuần hàng loạt"
+                  />
+                </th>
                 <th className="py-3 px-3 w-10 text-center">STT</th>
                 <th
                   onClick={() => handleSortChange('code')}
@@ -761,22 +804,44 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                   </div>
                 </th>
                 <th className="py-3 px-3 text-center w-28">Xếp loại</th>
-                <th className="py-3 px-3 min-w-[220px]">Ghi chú & Thành tích</th>
-                <th className="py-3 px-3 text-center w-20 print:hidden">Báo PH</th>
+                <th className="py-3 px-3 min-w-[200px]">Ghi chú & Thành tích</th>
+                <th className="py-3 px-3 text-center w-28 print:hidden">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
               {filteredData.map((s, idx) => {
                 const rankBadge = getRankBadgeClass(s.rank);
                 const hasAchievement = (s.achievementCount || 0) > 0;
+                const isSelected = tableSelectedStudentIds.has(s.studentId);
 
                 return (
                   <tr
                     key={s.studentId}
                     className={`hover:bg-blue-50/40 dark:hover:bg-slate-750/50 transition-colors ${
-                      hasAchievement ? 'bg-amber-50/20 dark:bg-amber-950/10' : ''
+                      isSelected
+                        ? 'bg-blue-50/80 dark:bg-blue-950/40'
+                        : hasAchievement
+                        ? 'bg-amber-50/20 dark:bg-amber-950/10'
+                        : ''
                     }`}
                   >
+                    <td className="py-2.5 px-3 text-center print:hidden">
+                      <input
+                        type="checkbox"
+                        aria-label={`Chọn học sinh ${s.fullName}`}
+                        checked={isSelected}
+                        onChange={(e) => {
+                          const next = new Set(tableSelectedStudentIds);
+                          if (e.target.checked) {
+                            next.add(s.studentId);
+                          } else {
+                            next.delete(s.studentId);
+                          }
+                          setTableSelectedStudentIds(next);
+                        }}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </td>
                     <td className="py-2.5 px-3 text-center text-slate-400 font-mono">
                       {idx + 1}
                     </td>
@@ -852,16 +917,34 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                       {s.notes}
                     </td>
                     <td className="py-2.5 px-3 text-center print:hidden">
-                      <button
-                        onClick={() => {
-                          if (onSelectStudentForReport) onSelectStudentForReport(s.studentId);
-                          onNavigateTab('parent-report');
-                        }}
-                        className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 rounded transition"
-                        title="Tạo tin nhắn báo phụ huynh học sinh này"
-                      >
-                        <MessageSquare className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedStudentIds([s.studentId]);
+                            setModalStudentSearch('');
+                            setSelectedRuleId('');
+                            setCustomScoreInput(1.0);
+                            setCustomNoteInput('');
+                            setIsCustomAwardModalOpen(true);
+                          }}
+                          className="p-1 text-amber-600 hover:bg-amber-50 dark:hover:bg-slate-700 rounded transition cursor-pointer"
+                          title={`+ Cộng điểm tuần riêng cho ${s.fullName}`}
+                        >
+                          <PlusCircle className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onSelectStudentForReport) onSelectStudentForReport(s.studentId);
+                            onNavigateTab('parent-report');
+                          }}
+                          className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 rounded transition cursor-pointer"
+                          title="Tạo tin nhắn báo phụ huynh học sinh này"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -869,6 +952,51 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* Floating Batch Action Bar when table items are checked */}
+        {tableSelectedStudentIds.size > 0 && (
+          <div className="sticky bottom-3 mx-4 my-2 p-3 bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-md text-white rounded-2xl shadow-xl border border-slate-700 flex flex-wrap items-center justify-between gap-3 animate-slideUp z-20">
+            <div className="flex items-center gap-2.5">
+              <span className="h-7 w-7 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">
+                {tableSelectedStudentIds.size}
+              </span>
+              <div>
+                <p className="text-xs font-bold text-white">
+                  Đã chọn {tableSelectedStudentIds.size} học sinh
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Sẵn sàng cộng điểm thi đua tuần {selectedWeek} hàng loạt
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTableSelectedStudentIds(new Set())}
+                className="px-3 py-1.5 rounded-xl text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                Bỏ chọn
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedStudentIds(Array.from(tableSelectedStudentIds));
+                  setModalStudentSearch('');
+                  setSelectedRuleId('');
+                  setCustomScoreInput(1.0);
+                  setCustomNoteInput('');
+                  setIsCustomAwardModalOpen(true);
+                }}
+                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Award className="h-4 w-4" />
+                <span>Cộng Điểm Tuần ({tableSelectedStudentIds.size} HS)</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* MODAL: XÉT THƯỞNG TỰ ĐỘNG TUẦN KHÔNG VI PHẠM */}
@@ -937,117 +1065,292 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
         </div>
       )}
 
-      {/* MODAL: TRAO THƯỞNG THÀNH TÍCH CÁ NHÂN */}
+      {/* MODAL: CỘNG ĐIỂM THƯỞNG TUẦN (1 HOẶC NHIỀU HỌC SINH CÙNG LÚC) */}
       {isCustomAwardModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Award className="h-5 w-5 text-amber-600" />
-                <span>Trao Điểm Thưởng Thành Tích Tuần {selectedWeek}</span>
-              </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 sm:p-4 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4 max-h-[92vh] overflow-y-auto scrollbar-thin">
+            {/* Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                  <Award className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Cộng Điểm Thưởng Tuần {selectedWeek}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Áp dụng cộng điểm thi đua, thành tích cho 1 hoặc nhiều học sinh cùng lúc
+                  </p>
+                </div>
+              </div>
               <button
+                type="button"
                 onClick={() => setIsCustomAwardModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-semibold mb-1">Chọn học sinh được khen thưởng *</label>
-                <select
-                  value={selectedStudentId}
-                  onChange={(e) => setSelectedStudentId(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl font-bold"
-                >
-                  <option value="">-- Chọn học sinh trong danh sách lớp --</option>
-                  {students.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.studentCode} - {s.fullName}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="space-y-4 text-xs">
+              {/* SECTION 1: CHỌN HỌC SINH */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-750 rounded-2xl border border-slate-200/80 dark:border-slate-700 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <Users className="h-4 w-4 text-blue-600" />
+                    <span>Danh sách học sinh nhận điểm thưởng:</span>
+                    <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-extrabold text-[11px]">
+                      Đã chọn {selectedStudentIds.length} / {students.length} HS
+                    </span>
+                  </label>
 
-              <div>
-                <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
-                  Quy chế / Danh hiệu thành tích{' '}
-                  <span className="text-slate-400 font-normal text-xs">(Không bắt buộc)</span>
-                </label>
-                <select
-                  value={selectedRuleId}
-                  onChange={(e) => {
-                    const ruleId = e.target.value;
-                    setSelectedRuleId(ruleId);
-                    const r = weeklyRules.find((x) => x.id === ruleId);
-                    if (r) {
-                      setCustomScoreInput(r.bonusScore);
-                    }
-                  }}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl font-semibold"
-                >
-                  <option value="">-- Không chọn quy chế (Không bắt buộc / Nhập tự do) --</option>
-                  {weeklyRules.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      [{r.code}] {r.title} (+{r.bonusScore}đ)
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Mục này không bắt buộc. Thầy/cô có thể chọn quy chế mẫu hoặc để trống và nhập nội dung khen thưởng tự do ở phần ghi chú bên dưới.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Mức điểm thưởng cộng</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0.5"
-                    value={customScoreInput}
-                    onChange={(e) => setCustomScoreInput(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl font-bold font-mono text-emerald-600"
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStudentIds(students.map((s) => s.id))}
+                      className="px-2.5 py-1 bg-white dark:bg-slate-700 hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-700 dark:text-blue-300 font-semibold rounded-lg border border-slate-200 dark:border-slate-600 transition cursor-pointer text-[11px]"
+                    >
+                      + Chọn cả lớp ({students.length})
+                    </button>
+                    {selectedStudentIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStudentIds([])}
+                        className="px-2.5 py-1 bg-white dark:bg-slate-700 hover:bg-rose-50 text-rose-600 dark:text-rose-400 font-semibold rounded-lg border border-slate-200 dark:border-slate-600 transition cursor-pointer text-[11px]"
+                      >
+                        Bỏ chọn
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className="block font-semibold mb-1">Thời điểm</label>
+
+                {/* Search Bar for student list */}
+                <div className="relative">
+                  <Search className="h-3.5 w-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                    disabled
-                    value={`Tuần ${selectedWeek} (Tháng ${selectedMonth})`}
-                    className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 font-medium"
+                    placeholder="Tìm kiếm theo họ tên hoặc mã học sinh..."
+                    value={modalStudentSearch}
+                    onChange={(e) => setModalStudentSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
+                </div>
+
+                {/* Selected Chips Preview */}
+                {selectedStudentIds.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    {selectedStudentIds.slice(0, 8).map((sId) => {
+                      const st = students.find((x) => x.id === sId);
+                      if (!st) return null;
+                      return (
+                        <span
+                          key={sId}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 text-[11px] font-medium"
+                        >
+                          <span className="truncate max-w-[120px]">{st.fullName}</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedStudentIds(selectedStudentIds.filter((id) => id !== sId))}
+                            className="hover:text-rose-600 cursor-pointer"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                    {selectedStudentIds.length > 8 && (
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium self-center">
+                        +{selectedStudentIds.length - 8} học sinh khác...
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Student Checklist Grid */}
+                <div className="max-h-44 overflow-y-auto scrollbar-thin bg-white dark:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {filteredModalStudents.map((s) => {
+                    const isChecked = selectedStudentIds.includes(s.id);
+                    const weekSummary = weeklyData.find((w) => w.studentId === s.id);
+                    return (
+                      <label
+                        key={s.id}
+                        className={`flex items-center justify-between p-2 rounded-lg border transition cursor-pointer select-none ${
+                          isChecked
+                            ? 'bg-blue-50/80 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-750 border-slate-100 dark:border-slate-700/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedStudentIds([...selectedStudentIds, s.id]);
+                              } else {
+                                setSelectedStudentIds(selectedStudentIds.filter((id) => id !== s.id));
+                              }
+                            }}
+                            className="h-3.5 w-3.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                          <div className="min-w-0">
+                            <p className="font-bold text-slate-900 dark:text-white truncate">
+                              {s.fullName}
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-mono">
+                              {s.studentCode}
+                            </p>
+                          </div>
+                        </div>
+
+                        {weekSummary && (
+                          <span
+                            className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded-md shrink-0 ${
+                              weekSummary.finalScore >= 8.5
+                                ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                                : weekSummary.finalScore >= 7.0
+                                ? 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                            }`}
+                            title="Điểm tổng kết tuần hiện tại"
+                          >
+                            {formatVietnameseNumber(weekSummary.finalScore)}đ
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
+                  {filteredModalStudents.length === 0 && (
+                    <div className="col-span-2 py-4 text-center text-slate-400">
+                      Không tìm thấy học sinh nào phù hợp từ khóa
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold mb-1">Ghi chú cụ thể (Tùy chọn)</label>
-                <input
-                  type="text"
-                  placeholder="vd: Tuyên dương hoa điểm 10 môn Toán, giải nhì cầu lông..."
-                  value={customNoteInput}
-                  onChange={(e) => setCustomNoteInput(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl"
-                />
+              {/* SECTION 2: QUY CHẾ VÀ MỨC ĐIỂM CỘNG */}
+              <div className="p-3.5 bg-amber-50/40 dark:bg-amber-950/20 rounded-2xl border border-amber-200/80 dark:border-amber-900/40 space-y-3">
+                <div>
+                  <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
+                    Quy chế / Danh hiệu thành tích mẫu{' '}
+                    <span className="text-slate-400 font-normal text-xs">(Không bắt buộc)</span>
+                  </label>
+                  <select
+                    value={selectedRuleId}
+                    onChange={(e) => {
+                      const ruleId = e.target.value;
+                      setSelectedRuleId(ruleId);
+                      const r = weeklyRules.find((x) => x.id === ruleId);
+                      if (r) {
+                        setCustomScoreInput(r.bonusScore);
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-semibold cursor-pointer"
+                  >
+                    <option value="">-- Không chọn quy chế (Nhập tự do theo đề xuất của GVCN) --</option>
+                    {weeklyRules.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        [{r.code}] {r.title} (+{r.bonusScore}đ)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
+                      Mức điểm thưởng cộng cho mỗi HS
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0.1"
+                        max="10"
+                        value={customScoreInput}
+                        onChange={(e) => setCustomScoreInput(Number(e.target.value))}
+                        className="w-28 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-black font-mono text-emerald-600 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {[0.5, 1.0, 1.5, 2.0].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setCustomScoreInput(preset)}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer border ${
+                              customScoreInput === preset
+                                ? 'bg-emerald-600 text-white border-emerald-600'
+                                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            +{preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
+                      Áp dụng vào thời điểm
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      value={`Tuần ${selectedWeek} (Tháng ${selectedMonth}) • Năm học ${classConfig.schoolYear || '2025–2026'}`}
+                      className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
+                    Lý do / Ghi chú cụ thể (Tùy chọn)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="vd: Tuyên dương trực nhật sạch sẽ, đạt hoa điểm 10, tham gia văn nghệ 20/11..."
+                    value={customNoteInput}
+                    onChange={(e) => setCustomNoteInput(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2">
-              <button
-                onClick={() => setIsCustomAwardModalOpen(false)}
-                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={handleConfirmCustomAward}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-sm transition active:scale-95"
-              >
-                Trao thưởng ngay
-              </button>
+            {/* Footer */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[11px] text-slate-500">
+                {selectedStudentIds.length === 0 ? (
+                  <span className="text-amber-600 font-medium">⚠️ Vui lòng chọn ít nhất 1 học sinh</span>
+                ) : (
+                  <span>
+                    Tổng điểm cộng thêm vào lớp: <strong>+{selectedStudentIds.length * (Number(customScoreInput) || 0)} điểm</strong>
+                  </span>
+                )}
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomAwardModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-650 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedStudentIds.length === 0}
+                  onClick={handleConfirmCustomAward}
+                  className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md transition active:scale-95 cursor-pointer flex items-center gap-1.5"
+                >
+                  <Award className="h-4 w-4" />
+                  <span>
+                    Xác nhận cộng +{customScoreInput}đ ({selectedStudentIds.length} HS)
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

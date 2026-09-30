@@ -161,7 +161,7 @@ interface AppContextType {
   }) => Promise<{ log: DisciplineLog; alreadyAwarded?: boolean }>;
   batchAwardAchievementBonus: (params: {
     studentIds: string[];
-    rule: AchievementBonusRule;
+    rule?: AchievementBonusRule;
     weekNumber?: number;
     month?: number;
     customScore?: number;
@@ -311,6 +311,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const enterInspectorMode = (classItem: SchoolClass) => {
+    // Teachers are strictly restricted to their own homeroom class
+    if (userRole === 'teacher') {
+      console.warn('Giáo viên không có quyền thanh tra lớp học khác');
+      return;
+    }
     setInspectorModeClass(classItem);
   };
 
@@ -319,6 +324,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const switchWorkingClass = (classItem: SchoolClass) => {
+    // Teachers are strictly restricted to their own homeroom class
+    if (userRole === 'teacher') {
+      console.warn('Giáo viên không có quyền chuyển sang xem hoặc chỉnh sửa lớp không chủ nhiệm');
+      return;
+    }
     setClassConfig((prev) => ({
       ...prev,
       className: classItem.className.replace(/^lớp\s+/i, '').trim(),
@@ -1616,7 +1626,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Batch Award Achievement Bonus
   const batchAwardAchievementBonus = async (params: {
     studentIds: string[];
-    rule: AchievementBonusRule;
+    rule?: AchievementBonusRule;
     weekNumber?: number;
     month?: number;
     customScore?: number;

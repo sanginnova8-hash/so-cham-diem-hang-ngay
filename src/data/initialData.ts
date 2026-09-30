@@ -134,8 +134,8 @@ export const DEFAULT_ACHIEVEMENT_RULES: AchievementBonusRule[] = [
 export const INITIAL_CLASS_CONFIG: ClassConfig = {
   id: 'class_10a8_2026',
   className: '10A8',
-  schoolYear: '2026–2027',
-  schoolName: 'Trường THPT Chuyên',
+  schoolYear: '2025–2026',
+  schoolName: 'Trường Cao Đẳng Nghề Số 1 - Bộ Quốc Phòng',
   grade: 'Khối 10',
   roomNumber: 'Phòng 204 (Dãy A)',
   homeroomTeacher: 'Nguyễn Văn Sang',

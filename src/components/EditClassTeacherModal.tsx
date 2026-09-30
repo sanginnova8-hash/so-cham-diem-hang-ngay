@@ -31,7 +31,7 @@ export const EditClassTeacherModal: React.FC<EditClassTeacherModalProps> = ({
   onClose,
   defaultTab = 'teacher',
 }) => {
-  const { classConfig, updateClassConfig, students } = useApp();
+  const { classConfig, updateClassConfig, students, userRole, activeAccount, schoolClasses } = useApp();
 
   const [activeTab, setActiveTab] = useState<'teacher' | 'class' | 'cadres' | 'scoring'>(defaultTab);
 
@@ -100,6 +100,17 @@ export const EditClassTeacherModal: React.FC<EditClassTeacherModalProps> = ({
     }
     if (!homeroomTeacher.trim()) {
       alert('Vui lòng nhập họ tên Giáo viên chủ nhiệm.');
+      return;
+    }
+
+    const cleanClassName = className.trim().replace(/^lớp\s+/i, '');
+    const isConflict = schoolClasses.some(
+      (c) =>
+        c.className.toLowerCase() === cleanClassName.toLowerCase() &&
+        c.teacherId !== (activeAccount?.uid || '')
+    );
+    if (userRole === 'teacher' && isConflict) {
+      alert(`Tên lớp "${cleanClassName}" đã thuộc về một giáo viên khác trong trường. Thầy/cô chỉ có quyền quản lý và chỉnh sửa lớp được phân công.`);
       return;
     }
 
