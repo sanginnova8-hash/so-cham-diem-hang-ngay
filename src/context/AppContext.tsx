@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef, ReactNode } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
+import { resolveLoginIdentifier } from '../lib/loginIdentifier';
 import {
   collection,
   doc,
@@ -765,10 +766,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }) => {
     setIsCloudSyncing(true);
     try {
-      const cleanInput = params.email.trim();
+      const cleanInput = params.email.trim().toLowerCase();
       const isEmail = cleanInput.includes('@');
       const username = isEmail ? cleanInput.split('@')[0] : cleanInput;
-      const effectiveEmail = isEmail ? cleanInput : `${username.toLowerCase()}@cdnghe01bqp.edu.vn`;
+      const effectiveEmail = resolveLoginIdentifier(cleanInput);
 
       const existing = userAccounts.find(
         (a) =>
@@ -855,7 +856,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsCloudSyncing(true);
     try {
       const identifier = loginIdentifier.trim().toLowerCase();
-      const email = identifier.includes('@') ? identifier : `${identifier}@cdnghe01bqp.edu.vn`;
+      const email = resolveLoginIdentifier(identifier);
       const user = await loginWithEmail(email, pass);
       let account = await getUserFromCloud(user.uid);
       if (!account) {
@@ -870,7 +871,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setActiveAccount(account); setUserRole(account.role); setIsLocalMode(false);
       await loadUserDataFromFirestore(user.uid, account);
     } catch (error: any) {
-      throw new Error(error.code?.startsWith('auth/') ? 'Email hoặc mật khẩu không chính xác, hoặc đăng nhập email chưa được bật trong Firebase.' : error.message);
+      throw new Error(error.code?.startsWith('auth/') ? 'Tên tài khoản/email hoặc mật khẩu không chính xác.' : error.message);
     } finally { setIsCloudSyncing(false); }
   };
 

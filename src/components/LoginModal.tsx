@@ -94,7 +94,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onNavig
     setLoginLoading(true);
     setLoginError(null);
     try {
-      await loginUserWithEmailPassword(loginEmail.trim(), loginPassword.trim());
+      await loginUserWithEmailPassword(loginEmail.trim(), loginPassword);
       onClose();
     } catch (err: any) {
       console.warn('Email login error:', err);
@@ -124,7 +124,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onNavig
       await registerWithEmailPassword({
         name: regName.trim(),
         email: regEmail.trim(),
-        pass: regPassword.trim(),
+        pass: regPassword,
         className: regClassName.trim().replace(/^lớp\s+/i, '').trim(),
         department: regDepartment.trim() || 'Khoa Đào tạo nghề',
         phone: regPhone.trim() || undefined,
@@ -628,7 +628,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onNavig
                       </label>
                       <input
                         type="text"
-                        placeholder="vd: hoa.le"
+                        placeholder="vd: sanginnova hoặc email@gmail.com"
+                        autoComplete="username"
+                        autoCapitalize="none"
                         value={regEmail}
                         onChange={(e) => setRegEmail(e.target.value)}
                         className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -652,6 +654,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onNavig
                     </div>
                   </div>
 
+                  <p className="text-[11px] text-slate-500">Có thể đăng ký bằng email hoặc tên tài khoản như sanginnova. Sau đó đăng nhập bằng đúng thông tin đã đăng ký. Tên tài khoản không có email thật sẽ không nhận được thư đặt lại mật khẩu.</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
