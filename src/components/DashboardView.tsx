@@ -166,21 +166,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onNavigateTab('zalo-composer')}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-semibold rounded-xl border border-blue-200 dark:border-blue-800 transition active:scale-95 shadow-xs"
-                title="Mở công cụ soạn thảo tin nhắn Zalo tự động theo mẫu kèm số liệu điểm số"
-              >
-                <MessageSquareText className="h-3.5 w-3.5" />
-                <span>Soạn tin Zalo</span>
-              </button>
+              {userRole !== 'monitor' && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('zalo-composer')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-semibold rounded-xl border border-blue-200 dark:border-blue-800 transition active:scale-95 shadow-xs cursor-pointer"
+                  title="Mở công cụ soạn thảo tin nhắn Zalo tự động theo mẫu kèm số liệu điểm số"
+                >
+                  <MessageSquareText className="h-3.5 w-3.5" />
+                  <span>Soạn tin Zalo</span>
+                </button>
+              )}
 
               {userRole !== 'monitor' && (
                 <button
                   type="button"
                   onClick={() => setIsMonitorModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-semibold rounded-xl border border-indigo-200 dark:border-indigo-800 transition active:scale-95 shadow-xs"
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-semibold rounded-xl border border-indigo-200 dark:border-indigo-800 transition active:scale-95 shadow-xs cursor-pointer"
                   title="Cấp tài khoản & phân quyền cho Lớp trưởng tự chấm điểm nề nếp"
                 >
                   <UserCheck className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
@@ -188,11 +190,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </button>
               )}
 
-              {onOpenEditClassTeacherModal && (
+              {userRole !== 'monitor' && onOpenEditClassTeacherModal && (
                 <button
                   type="button"
                   onClick={onOpenEditClassTeacherModal}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-750 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 transition active:scale-95 shadow-xs"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-750 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 transition active:scale-95 shadow-xs cursor-pointer"
                   title="Thay đổi thông tin giáo viên và thông tin lớp học"
                 >
                   <UserCog className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />

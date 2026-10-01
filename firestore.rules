@@ -2,85 +2,28 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // =========================================================================
-    // CORE AUTHENTICATION & ROLE-BASED ACCESS CONTROL (RBAC) HELPERS
-    // =========================================================================
-
+    // Helper to check if client has an active Firebase auth session
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isSuperUser() {
-      return isSignedIn() && (
-        request.auth.token.email == 'sanginnova8@gmail.com' ||
-        request.auth.token.email == 'admin@cdnghe01bqp.edu.vn'
-      );
-    }
-
+    // Fetch user profile from Firestore if it exists
     function getUserData() {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid))
         ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data
         : null;
     }
 
-    function getUserRole() {
-      return getUserData() != null ? getUserData().role : 'guest';
-    }
-
-    function isOwner() {
-      return isSignedIn() && (isSuperUser() || getUserRole() == 'owner');
-    }
-
-    function isAdmin() {
-      return isSignedIn() && (isOwner() || getUserRole() == 'admin');
-    }
-
-    function isInspector() {
-      return isSignedIn() && (isAdmin() || getUserRole() == 'inspector');
-    }
-
-    function isManager() {
-      return isSignedIn() && (isInspector() || getUserRole() == 'manager');
-    }
-
-    function isTeacher() {
-      return isSignedIn() && (isManager() || getUserRole() == 'teacher');
-    }
-
-    function isRecorder() {
-      return isSignedIn() && (isTeacher() || getUserRole() == 'recorder');
-    }
-
-    // Verify account is active and not disabled
-    function isAccountActive() {
-      return isSignedIn() && (
-        isSuperUser() ||
-        getUserData() == null ||
-        (getUserData().status != 'disabled' && getUserData().isActive != false)
-      );
-    }
-
-    // Check class assignment permission for Teacher / Homeroom
-    function canAccessClass(classId) {
-      return isAccountActive() && (
-        isAdmin() ||
-        isInspector() ||
-        (getUserData() != null && (
-          (getUserData().assignedClassIds != null && classId in getUserData().assignedClassIds) ||
-          getUserData().assignedClassId == classId ||
-          getUserData().assignedClassName == classId
-        ))
-      );
+    // Check if the current user has the 'monitor' (Lớp trưởng) role
+    function isMonitor() {
+      return getUserData() != null && getUserData().role == 'monitor';
     }
 
     // =========================================================================
     // 1. USERS & USER PROFILES
     // =========================================================================
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create: if isAccountActive() && (isAdmin() || request.auth.uid == userId);
-      allow update: if isAccountActive() && (isAdmin() || request.auth.uid == userId);
-      allow delete: if isAccountActive() && isAdmin();
+      allow read, write: if isSignedIn();
     }
 
     // =========================================================================
@@ -88,17 +31,17 @@ service cloud.firestore {
     // =========================================================================
     match /schools/{schoolId} {
       allow read: if true;
-      allow write: if isAccountActive() && isAdmin();
+      allow write: if isSignedIn() && !isMonitor();
     }
 
     match /academicYears/{yearId} {
       allow read: if true;
-      allow write: if isAccountActive() && isAdmin();
+      allow write: if isSignedIn() && !isMonitor();
     }
 
     match /semesters/{semesterId} {
       allow read: if true;
-      allow write: if isAccountActive() && isAdmin();
+      allow write: if isSignedIn() && !isMonitor();
     }
 
     // =========================================================================
@@ -106,67 +49,60 @@ service cloud.firestore {
     // =========================================================================
     match /classes/{classId} {
       allow read: if true;
-      allow create: if isAccountActive() && isAdmin();
-      allow update: if isAccountActive() && (isAdmin() || canAccessClass(classId));
-      allow delete: if isAccountActive() && isAdmin();
+      allow write: if isSignedIn() && !isMonitor();
     }
 
     // =========================================================================
     // 4. STUDENTS & ENROLLMENTS
     // =========================================================================
     match /students/{studentId} {
-      // Strict: Public CANNOT read students directly. Only authenticated school staff.
-      allow read: if isAccountActive() && isRecorder();
-      // Only Admin and assigned Teacher can create/update. Recorder CANNOT update student.
-      allow create: if isAccountActive() && isTeacher();
-      allow update: if isAccountActive() && isTeacher();
-      allow delete: if isAccountActive() && isAdmin();
+      allow read: if isSignedIn();
+      // Teacher / School can create, update, delete students. Monitor CANNOT!
+      allow write: if isSignedIn() && !isMonitor();
     }
 
     match /enrollments/{enrollmentId} {
-      allow read: if isAccountActive() && isRecorder();
-      allow write: if isAccountActive() && isTeacher();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isMonitor();
     }
 
     // =========================================================================
     // 5. BEHAVIOR CATEGORIES & REGULATIONS
     // =========================================================================
     match /behaviorCategories/{categoryId} {
-      allow read: if true; // Public can see behavior regulations
-      allow create, update: if isAccountActive() && (isAdmin() || isTeacher());
-      allow delete: if isAccountActive() && isAdmin();
+      allow read: if true;
+      allow write: if isSignedIn() && !isMonitor();
     }
 
     // =========================================================================
-    // 6. DISCIPLINE LOGS (CORE LOGGING COLLECTION)
+    // 6. DISCIPLINE LOGS (Core logging: Both Teacher and Monitor record instantly!)
     // =========================================================================
     match /disciplineLogs/{logId} {
-      // Staff with Recorder role or higher can read
-      allow read: if isAccountActive() && isRecorder();
-      // Recorder, Teacher, Manager, Admin can create
-      allow create: if isAccountActive() && isRecorder();
-      // Only Teacher, Manager, Admin can edit or void. Recorder CANNOT edit once saved!
-      allow update: if isAccountActive() && isTeacher();
-      // Hard delete is restricted to Admin/Owner; prefer status='voided'
-      allow delete: if isAccountActive() && isAdmin();
+      allow read: if isSignedIn();
+      // Teacher, Admin, Monitor can create discipline logs immediately
+      allow create: if isSignedIn();
+      // Teacher can update any. Monitor can only update if authorized
+      allow update: if isSignedIn();
+      // Teacher can delete. Monitor CANNOT delete discipline logs!
+      allow delete: if isSignedIn() && !isMonitor();
     }
 
     // =========================================================================
     // 7. SNAPSHOTS & SUMMARIES
     // =========================================================================
     match /weeklySnapshots/{snapshotId} {
-      allow read: if isAccountActive() && isRecorder();
-      allow write: if isAccountActive() && isTeacher();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isMonitor();
     }
 
     match /monthlySummaries/{summaryId} {
-      allow read: if isAccountActive() && isTeacher();
-      allow write: if isAccountActive() && isTeacher();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isMonitor();
     }
 
     match /semesterSummaries/{summaryId} {
-      allow read: if isAccountActive() && isTeacher();
-      allow write: if isAccountActive() && isTeacher();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isMonitor();
     }
 
     // =========================================================================
@@ -174,31 +110,24 @@ service cloud.firestore {
     // =========================================================================
     match /classConfigs/{configId} {
       allow read: if true;
-      allow create, update: if isAccountActive() && (isAdmin() || isTeacher());
-      allow delete: if isAccountActive() && isAdmin();
+      allow write: if isSignedIn() && !isMonitor();
     }
 
     // =========================================================================
-    // 9. PERIOD LOCKS (ANTI-TAMPER LOCKING)
+    // 9. PERIOD LOCKS
     // =========================================================================
     match /periodLocks/{lockId} {
       allow read: if true;
-      // Only Inspector, Admin, or authorized Teacher can set/update lock
-      allow create, update: if isAccountActive() && (isInspector() || isAdmin());
-      allow delete: if isAccountActive() && isAdmin();
+      allow write: if isSignedIn() && !isMonitor();
     }
 
     // =========================================================================
-    // 10. AUDIT LOGS (IMMUTABLE AUDIT TRAIL)
+    // 10. AUDIT LOGS
     // =========================================================================
     match /auditLogs/{logId} {
-      // Only Admin and Owner can read audit logs
-      allow read: if isAccountActive() && isAdmin();
-      // Any authenticated action can create an audit trail entry
-      allow create: if isAccountActive();
-      // STRICT IMMUTABILITY: Nobody, even clients, can update or delete audit logs!
-      allow update: if false;
-      allow delete: if false;
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
     }
 
     // =========================================================================
@@ -206,15 +135,15 @@ service cloud.firestore {
     // =========================================================================
     match /systemConfigs/{configId} {
       allow read: if true;
-      allow write: if isAccountActive() && isAdmin();
+      allow write: if isSignedIn() && !isMonitor();
     }
 
     // =========================================================================
     // 12. PARENT REPORTS
     // =========================================================================
     match /parentReports/{reportId} {
-      allow read: if isAccountActive() && isTeacher();
-      allow write: if isAccountActive() && isTeacher();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isMonitor();
     }
   }
 }

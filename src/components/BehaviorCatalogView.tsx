@@ -30,6 +30,7 @@ export const BehaviorCatalogView: React.FC = () => {
     behaviorCategories,
     disciplineLogs,
     classConfig,
+    userRole,
     addBehaviorCategory,
     updateBehaviorCategory,
     toggleBehaviorCategoryActive,
@@ -255,10 +256,12 @@ export const BehaviorCatalogView: React.FC = () => {
             </span>
             <div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span>Cài Đặt Danh Mục Lỗi & Điểm Thưởng Thành Tích</span>
+                <span>{userRole === 'monitor' ? 'Quy Chế & Biểu Điểm Thi Đua Lớp Học' : 'Cài Đặt Danh Mục Lỗi & Điểm Thưởng Thành Tích'}</span>
               </h2>
               <p className="text-xs text-slate-500">
-                Tùy chỉnh biểu điểm vi phạm • Cài đặt quy chế cộng điểm thưởng tuần / tháng khi có thành tích • Lớp {classConfig.className}
+                {userRole === 'monitor'
+                  ? `Biểu điểm quy chuẩn đối chiếu khi chấm điểm nề nếp • Lớp ${classConfig.className}`
+                  : `Tùy chỉnh biểu điểm vi phạm • Cài đặt quy chế cộng điểm thưởng tuần / tháng khi có thành tích • Lớp ${classConfig.className}`}
               </p>
             </div>
           </div>
@@ -269,65 +272,87 @@ export const BehaviorCatalogView: React.FC = () => {
             <>
               <button
                 onClick={handleExportAchievementRules}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-750 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl transition"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-750 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl transition cursor-pointer"
                 title="Xuất Excel quy chế thưởng"
               >
                 <Download className="h-3.5 w-3.5" />
                 <span>Xuất Excel</span>
               </button>
-              <button
-                onClick={() => setIsResetAchieveConfirmOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 text-xs font-semibold rounded-xl border border-amber-200 dark:border-amber-800 transition"
-                title="Khôi phục quy chế thưởng thành tích mặc định"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                <span>Khôi phục chuẩn</span>
-              </button>
-              <button
-                onClick={() => {
-                  setAchievePeriod('weekly');
-                  setAchieveCode(`TT_W0${achievementRules.length + 1}`);
-                  setIsAddAchieveModalOpen(true);
-                }}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition active:scale-95"
-              >
-                <PlusCircle className="h-4 w-4" />
-                <span>Thêm quy chế thưởng</span>
-              </button>
+              {userRole !== 'monitor' && (
+                <>
+                  <button
+                    onClick={() => setIsResetAchieveConfirmOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 text-xs font-semibold rounded-xl border border-amber-200 dark:border-amber-800 transition cursor-pointer"
+                    title="Khôi phục quy chế thưởng thành tích mặc định"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>Khôi phục chuẩn</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAchievePeriod('weekly');
+                      setAchieveCode(`TT_W0${achievementRules.length + 1}`);
+                      setIsAddAchieveModalOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition active:scale-95 cursor-pointer"
+                  >
+                    <PlusCircle className="h-4 w-4" />
+                    <span>Thêm quy chế thưởng</span>
+                  </button>
+                </>
+              )}
             </>
           ) : (
             <>
               <button
                 onClick={handleExportCategories}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-750 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl transition"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-750 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl transition cursor-pointer"
                 title="Xuất bảng danh mục ra Excel"
               >
                 <Download className="h-3.5 w-3.5" />
                 <span>Xuất Excel</span>
               </button>
-              <button
-                onClick={() => setIsResetCatConfirmOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 text-xs font-semibold rounded-xl border border-amber-200 dark:border-amber-800 transition"
-                title="Khôi phục danh mục chuẩn Bộ GD&ĐT (L01-L09 & T01-T05)"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                <span>Khôi phục chuẩn</span>
-              </button>
-              <button
-                onClick={() => {
-                  setCatType(mainTab === 'bonus' ? 'bonus' : 'deduct');
-                  setCatCode(mainTab === 'bonus' ? `T0${behaviorCategories.filter(c => c.type === 'bonus').length + 1}` : `L${behaviorCategories.filter(c => c.type === 'deduct').length + 1}`);
-                  setIsAddCatModalOpen(true);
-                }}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition active:scale-95"
-              >
-                <PlusCircle className="h-4 w-4" />
-                <span>Thêm danh mục mới</span>
-              </button>
+              {userRole !== 'monitor' && (
+                <>
+                  <button
+                    onClick={() => setIsResetCatConfirmOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 text-xs font-semibold rounded-xl border border-amber-200 dark:border-amber-800 transition cursor-pointer"
+                    title="Khôi phục danh mục chuẩn Bộ GD&ĐT (L01-L09 & T01-T05)"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>Khôi phục chuẩn</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCatType(mainTab === 'bonus' ? 'bonus' : 'deduct');
+                      setCatCode(mainTab === 'bonus' ? `T0${behaviorCategories.filter(c => c.type === 'bonus').length + 1}` : `L${behaviorCategories.filter(c => c.type === 'deduct').length + 1}`);
+                      setIsAddCatModalOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition active:scale-95 cursor-pointer"
+                  >
+                    <PlusCircle className="h-4 w-4" />
+                    <span>Thêm danh mục mới</span>
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
       </div>
+
+      {/* Banner thông báo quyền hạn cho Lớp trưởng */}
+      {userRole === 'monitor' && (
+        <div className="p-3.5 bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-2xl flex items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded-md bg-amber-600 text-white text-[10px] font-bold shrink-0">
+              CHẾ ĐỘ XEM
+            </span>
+            <span>
+              Em tra cứu danh mục lỗi và biểu điểm khen thưởng tại đây để chấm điểm chính xác theo quy chế. Quyền <strong>sửa đổi điểm chuẩn hoặc quy chế</strong> do Thầy/Cô chủ nhiệm thiết lập.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Main Feature Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-700 pb-3">
@@ -560,38 +585,52 @@ export const BehaviorCatalogView: React.FC = () => {
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between">
-                    <button
-                      onClick={() => updateAchievementRule(rule.id, { isActive: !rule.isActive })}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+                    {userRole !== 'monitor' ? (
+                      <button
+                        onClick={() => updateAchievementRule(rule.id, { isActive: !rule.isActive })}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                          rule.isActive
+                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 hover:bg-emerald-100'
+                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400 hover:bg-slate-300'
+                        }`}
+                      >
+                        <Power className="h-3 w-3" />
+                        <span>{rule.isActive ? 'Đang áp dụng' : 'Tạm tắt'}</span>
+                      </button>
+                    ) : (
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold ${
                         rule.isActive
-                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 hover:bg-emerald-100'
-                          : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400 hover:bg-slate-300'
-                      }`}
-                    >
-                      <Power className="h-3 w-3" />
-                      <span>{rule.isActive ? 'Đang áp dụng' : 'Tạm tắt'}</span>
-                    </button>
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+                          : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                      }`}>
+                        <span>{rule.isActive ? 'Đang áp dụng' : 'Tạm tắt'}</span>
+                      </span>
+                    )}
 
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setEditingAchieveRule(rule)}
-                        className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 rounded-lg transition"
-                        title="Chỉnh sửa quy chế & mức điểm thưởng"
-                      >
-                        <Edit2 className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (confirm(`Bạn có chắc muốn xóa quy chế khen thưởng "${rule.title}"?`)) {
-                            deleteAchievementRule(rule.id);
-                          }
-                        }}
-                        className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-700 rounded-lg transition"
-                        title="Xóa quy chế"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                    {userRole !== 'monitor' ? (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setEditingAchieveRule(rule)}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 rounded-lg transition cursor-pointer"
+                          title="Chỉnh sửa quy chế & mức điểm thưởng"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Bạn có chắc muốn xóa quy chế khen thưởng "${rule.title}"?`)) {
+                              deleteAchievementRule(rule.id);
+                            }
+                          }}
+                          className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-700 rounded-lg transition cursor-pointer"
+                          title="Xóa quy chế"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 font-medium">Chỉ xem</span>
+                    )}
                   </div>
                 </div>
               );
@@ -646,7 +685,9 @@ export const BehaviorCatalogView: React.FC = () => {
                     <th className="py-3 px-3 min-w-[180px]">Căn cứ quy định</th>
                     <th className="py-3 px-3 min-w-[160px]">Từ khóa gợi ý</th>
                     <th className="py-3 px-3 text-center w-28">Trạng thái</th>
-                    <th className="py-3 px-3 text-center w-24">Thao tác</th>
+                    <th className="py-3 px-3 text-center w-24">
+                      {userRole === 'monitor' ? 'Quy chế' : 'Thao tác'}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -676,7 +717,7 @@ export const BehaviorCatalogView: React.FC = () => {
                         </td>
                         <td className="py-3 px-3 text-center">
                           <span
-                            className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                               isDeduct
                                 ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400'
                                 : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
@@ -714,44 +755,60 @@ export const BehaviorCatalogView: React.FC = () => {
                           )}
                         </td>
                         <td className="py-3 px-3 text-center">
-                          <button
-                            onClick={() => toggleBehaviorCategoryActive(c.id)}
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition ${
-                              c.isActive
-                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
-                                : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                            }`}
-                            title="Bấm để bật / tắt sử dụng danh mục này"
-                          >
-                            <Power className="h-3 w-3" />
-                            <span>{c.isActive ? 'Đang dùng' : 'Vô hiệu hóa'}</span>
-                          </button>
+                          {userRole !== 'monitor' ? (
+                            <button
+                              onClick={() => toggleBehaviorCategoryActive(c.id)}
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition ${
+                                c.isActive
+                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
+                                  : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                              }`}
+                              title="Bấm để bật / tắt sử dụng danh mục này"
+                            >
+                              <Power className="h-3 w-3" />
+                              <span>{c.isActive ? 'Đang dùng' : 'Vô hiệu hóa'}</span>
+                            </button>
+                          ) : (
+                            <span
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                c.isActive
+                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
+                                  : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                              }`}
+                            >
+                              <span>{c.isActive ? 'Đang dùng' : 'Tạm tắt'}</span>
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-3 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => setEditingCategory(c)}
-                              className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 rounded transition"
-                              title="Sửa danh mục & mức điểm"
-                            >
-                              <Edit2 className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteCategory(c.id, c.code)}
-                              className={`p-1 rounded transition ${
-                                used
-                                  ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed'
-                                  : 'text-rose-600 hover:bg-rose-50'
-                              }`}
-                              title={
-                                used
-                                  ? 'Danh mục đã có bản ghi sử dụng, không thể xóa (hãy vô hiệu hóa)'
-                                  : 'Xóa danh mục'
-                              }
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
+                          {userRole !== 'monitor' ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => setEditingCategory(c)}
+                                className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 rounded transition cursor-pointer"
+                                title="Sửa danh mục & mức điểm"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteCategory(c.id, c.code)}
+                                className={`p-1 rounded transition cursor-pointer ${
+                                  used
+                                    ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed'
+                                    : 'text-rose-600 hover:bg-rose-50'
+                                }`}
+                                title={
+                                  used
+                                    ? 'Danh mục đã có bản ghi sử dụng, không thể xóa (hãy vô hiệu hóa)'
+                                    : 'Xóa danh mục'
+                                }
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 font-medium">Chỉ xem</span>
+                          )}
                         </td>
                       </tr>
                     );

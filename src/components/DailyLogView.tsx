@@ -47,6 +47,7 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
     behaviorCategories,
     disciplineLogs,
     classConfig,
+    userRole,
     isPeriodLocked,
     addDisciplineLog,
     updateDisciplineLog,
@@ -171,20 +172,22 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={onOpenModal}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition active:scale-95"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition active:scale-95 cursor-pointer"
           >
             <PlusCircle className="h-4 w-4" />
             <span>Thêm ghi nhận mới</span>
           </button>
 
-          <button
-            onClick={() => setIsImportModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition active:scale-95"
-            title="Tải lên nhật ký vi phạm/lỗi nề nếp từ file Excel hoặc CSV"
-          >
-            <Upload className="h-4 w-4" />
-            <span>Tải lên nhật ký lỗi</span>
-          </button>
+          {userRole !== 'monitor' && (
+            <button
+              onClick={() => setIsImportModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition active:scale-95 cursor-pointer"
+              title="Tải lên nhật ký vi phạm/lỗi nề nếp từ file Excel hoặc CSV"
+            >
+              <Upload className="h-4 w-4" />
+              <span>Tải lên nhật ký lỗi</span>
+            </button>
+          )}
 
           <button
             onClick={handleExportExcel}
@@ -416,29 +419,35 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
                       </td>
                       <td className="py-3 px-3 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => setEditingLog(log)}
-                            className="p-1 hover:bg-blue-50 text-blue-600 dark:hover:bg-slate-700 rounded transition"
-                            title="Chỉnh sửa bản ghi"
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
+                          {/* Sửa bản ghi: GVCN được sửa tất cả; Lớp trưởng chỉ được sửa lượt chấm do chính mình tạo */}
+                          {(userRole !== 'monitor' || (log.reporter && log.reporter.toLowerCase().includes('lớp trưởng'))) && (
+                            <button
+                              onClick={() => setEditingLog(log)}
+                              className="p-1 hover:bg-blue-50 text-blue-600 dark:hover:bg-slate-700 rounded transition cursor-pointer"
+                              title="Chỉnh sửa bản ghi"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                           {log.history && log.history.length > 0 && (
                             <button
                               onClick={() => setHistoryLog(log)}
-                              className="p-1 hover:bg-slate-100 text-slate-500 dark:hover:bg-slate-700 rounded transition"
+                              className="p-1 hover:bg-slate-100 text-slate-500 dark:hover:bg-slate-700 rounded transition cursor-pointer"
                               title="Xem lịch sử thay đổi"
                             >
                               <History className="h-3.5 w-3.5" />
                             </button>
                           )}
-                          <button
-                            onClick={() => setDeletingLogId(log.id)}
-                            className="p-1 hover:bg-rose-50 text-rose-600 dark:hover:bg-slate-700 rounded transition"
-                            title="Xóa bản ghi"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          {/* Xóa bản ghi: Chỉ Thầy/Cô được quyền xóa, Lớp trưởng không được xóa */}
+                          {userRole !== 'monitor' && (
+                            <button
+                              onClick={() => setDeletingLogId(log.id)}
+                              className="p-1 hover:bg-rose-50 text-rose-600 dark:hover:bg-slate-700 rounded transition cursor-pointer"
+                              title="Xóa bản ghi"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

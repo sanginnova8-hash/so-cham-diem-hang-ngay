@@ -325,40 +325,42 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
         <div className="flex items-center gap-2 flex-wrap">
           {userRole !== 'monitor' && (
-            <button
-              onClick={() => setIsMonitorModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs sm:text-sm font-semibold rounded-xl border border-indigo-200 dark:border-indigo-800 transition active:scale-95 shadow-xs"
-              title="Cấp tài khoản & quyền chấm điểm cho Lớp trưởng"
-            >
-              <UserCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-              <span>{monitorAccount ? 'Tài khoản Lớp trưởng' : '+ Cấp quyền Lớp trưởng'}</span>
-            </button>
+            <>
+              <button
+                onClick={() => setIsMonitorModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs sm:text-sm font-semibold rounded-xl border border-indigo-200 dark:border-indigo-800 transition active:scale-95 shadow-xs"
+                title="Cấp tài khoản & quyền chấm điểm cho Lớp trưởng"
+              >
+                <UserCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                <span>{monitorAccount ? 'Tài khoản Lớp trưởng' : '+ Cấp quyền Lớp trưởng'}</span>
+              </button>
+
+              <button
+                onClick={() => setIsAddModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition active:scale-95 cursor-pointer"
+              >
+                <UserPlus className="h-4 w-4" />
+                <span>Thêm học sinh</span>
+              </button>
+
+              <button
+                onClick={() => setIsImportModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-medium rounded-xl transition cursor-pointer"
+              >
+                <Upload className="h-4 w-4" />
+                <span>Nhập Excel/CSV</span>
+              </button>
+
+              <button
+                onClick={downloadStudentTemplate}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium rounded-xl transition cursor-pointer"
+                title="Tải tệp mẫu Excel chuẩn để nhập danh sách"
+              >
+                <Download className="h-4 w-4" />
+                <span>Tải tệp mẫu</span>
+              </button>
+            </>
           )}
-
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition active:scale-95"
-          >
-            <UserPlus className="h-4 w-4" />
-            <span>Thêm học sinh</span>
-          </button>
-
-          <button
-            onClick={() => setIsImportModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-medium rounded-xl transition"
-          >
-            <Upload className="h-4 w-4" />
-            <span>Nhập Excel/CSV</span>
-          </button>
-
-          <button
-            onClick={downloadStudentTemplate}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium rounded-xl transition"
-            title="Tải tệp mẫu Excel chuẩn để nhập danh sách"
-          >
-            <Download className="h-4 w-4" />
-            <span>Tải tệp mẫu</span>
-          </button>
 
           <button
             onClick={handleExportStudents}
@@ -369,6 +371,20 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Banner thông báo quyền hạn cho Lớp trưởng */}
+      {userRole === 'monitor' && (
+        <div className="p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 rounded-2xl flex items-center justify-between gap-3 text-xs text-blue-900 dark:text-blue-200 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-bold shrink-0">
+              QUYỀN HẠN LỚP TRƯỞNG
+            </span>
+            <span>
+              Em được cấp quyền xem danh sách học sinh để theo dõi và chấm điểm nề nếp thi đua. Quyền <strong>thêm mới, chỉnh sửa thông tin hoặc xóa học sinh</strong> chỉ thuộc thẩm quyền của Thầy/Cô chủ nhiệm.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Filter & Search Bar */}
       <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row gap-3">
@@ -515,7 +531,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
       </div>
 
       {/* Selected Action Bar when multiple students are selected */}
-      {selectedStudentIds.length > 0 && (
+      {userRole !== 'monitor' && selectedStudentIds.length > 0 && (
         <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 p-3.5 px-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xs animate-in fade-in duration-150">
           <div className="flex items-center gap-2">
             <span className="flex items-center justify-center h-6 w-6 rounded-full bg-rose-600 text-white text-xs font-bold font-mono">
@@ -526,7 +542,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
             </span>
             <button
               onClick={() => setSelectedStudentIds([])}
-              className="text-xs text-rose-600 hover:text-rose-700 dark:text-rose-400 underline ml-2"
+              className="text-xs text-rose-600 hover:text-rose-700 dark:text-rose-400 underline ml-2 cursor-pointer"
             >
               Bỏ chọn tất cả
             </button>
@@ -535,7 +551,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={handleRequestBatchDelete}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition cursor-pointer"
             >
               <Trash2 className="h-4 w-4" />
               <span>Xóa {selectedStudentIds.length} học sinh đã chọn</span>
@@ -550,18 +566,20 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-slate-100 dark:bg-slate-750 text-slate-700 dark:text-slate-300 uppercase tracking-wider font-semibold sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700">
               <tr>
-                <th className="py-3 px-3 w-10 text-center">
-                  <input
-                    type="checkbox"
-                    checked={
-                      filteredStudents.length > 0 &&
-                      selectedStudentIds.length === filteredStudents.length
-                    }
-                    onChange={handleToggleSelectAll}
-                    title="Chọn / Bỏ chọn tất cả học sinh đang hiển thị"
-                    className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 dark:border-slate-600 cursor-pointer"
-                  />
-                </th>
+                {userRole !== 'monitor' && (
+                  <th className="py-3 px-3 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredStudents.length > 0 &&
+                        selectedStudentIds.length === filteredStudents.length
+                      }
+                      onChange={handleToggleSelectAll}
+                      title="Chọn / Bỏ chọn tất cả học sinh đang hiển thị"
+                      className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 dark:border-slate-600 cursor-pointer"
+                    />
+                  </th>
+                )}
                 <th className="py-3 px-2 w-12 text-center">STT</th>
                 <th
                   onClick={() => handleHeaderSort('code')}
@@ -611,13 +629,15 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                 <th className="py-3 px-3">Phụ huynh & SĐT</th>
                 <th className="py-3 px-3 text-center w-28">Trạng thái</th>
                 <th className="py-3 px-3 text-center w-28">Lịch sử nề nếp</th>
-                <th className="py-3 px-3 text-center w-32">Thao tác</th>
+                <th className={`py-3 px-3 text-center ${userRole === 'monitor' ? 'w-20' : 'w-32'}`}>
+                  {userRole === 'monitor' ? 'Chi tiết' : 'Thao tác'}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
               {filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={userRole === 'monitor' ? 8 : 9} className="py-12 text-center text-slate-400">
                     Không tìm thấy học sinh nào phù hợp.
                   </td>
                 </tr>
@@ -637,14 +657,16 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                           : 'hover:bg-blue-50/40 dark:hover:bg-slate-750/50'
                       }`}
                     >
-                      <td className="py-3 px-3 text-center">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => handleToggleSelectStudent(s.id)}
-                          className="h-4 w-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 dark:border-slate-600 cursor-pointer"
-                        />
-                      </td>
+                      {userRole !== 'monitor' && (
+                        <td className="py-3 px-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectStudent(s.id)}
+                            className="h-4 w-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 dark:border-slate-600 cursor-pointer"
+                          />
+                        </td>
+                      )}
                       <td className="py-3 px-2 text-center text-slate-400 font-mono">
                         {idx + 1}
                       </td>
@@ -735,36 +757,40 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                         <div className="flex items-center justify-center gap-1">
                           <button
                             onClick={() => setViewingStudent(s)}
-                            className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 rounded transition"
-                            title="Xem chi tiết hồ sơ & tiến trình"
+                            className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 rounded transition cursor-pointer"
+                            title="Xem chi tiết hồ sơ & tiến trình rèn luyện"
                           >
                             <Eye className="h-4 w-4" />
                           </button>
-                          <button
-                            onClick={() => setEditingStudent(s)}
-                            className="p-1 text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition"
-                            title="Sửa thông tin"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => toggleStudentStatus(s.id)}
-                            className={`p-1 rounded transition ${
-                              s.status === 'active'
-                                ? 'text-amber-600 hover:bg-amber-50'
-                                : 'text-emerald-600 hover:bg-emerald-50'
-                            }`}
-                            title={s.status === 'active' ? 'Chuyển sang ngừng theo học (vẫn giữ lịch sử)' : 'Kích hoạt lại học sinh'}
-                          >
-                            {s.status === 'active' ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
-                          </button>
-                          <button
-                            onClick={() => handleRequestDeleteStudent(s)}
-                            className="p-1 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-700 rounded transition"
-                            title="Xóa học sinh này"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          {userRole !== 'monitor' && (
+                            <>
+                              <button
+                                onClick={() => setEditingStudent(s)}
+                                className="p-1 text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition cursor-pointer"
+                                title="Sửa thông tin học sinh"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => toggleStudentStatus(s.id)}
+                                className={`p-1 rounded transition cursor-pointer ${
+                                  s.status === 'active'
+                                    ? 'text-amber-600 hover:bg-amber-50'
+                                    : 'text-emerald-600 hover:bg-emerald-50'
+                                }`}
+                                title={s.status === 'active' ? 'Chuyển sang ngừng theo học (vẫn giữ lịch sử)' : 'Kích hoạt lại học sinh'}
+                              >
+                                {s.status === 'active' ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                              </button>
+                              <button
+                                onClick={() => handleRequestDeleteStudent(s)}
+                                className="p-1 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-700 rounded transition cursor-pointer"
+                                title="Xóa học sinh này"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -357,29 +357,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const toggleLockPeriod = (periodType: 'week' | 'month' | 'semester', periodValue: number, reason?: string) => {
     setLockedPeriods((prev) => {
       const idx = prev.findIndex((p) => p.periodType === periodType && p.periodValue === periodValue);
+      let targetLock: PeriodLockStatus;
+      let next: PeriodLockStatus[];
       if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = {
+        next = [...prev];
+        targetLock = {
           ...next[idx],
           isLocked: !next[idx].isLocked,
           lockedAt: !next[idx].isLocked ? new Date().toISOString() : undefined,
           lockedBy: !next[idx].isLocked ? (activeAccount?.displayName || 'Ban Giám Hiệu') : undefined,
           reason: reason || next[idx].reason,
         };
-        return next;
+        next[idx] = targetLock;
       } else {
-        return [
-          ...prev,
-          {
-            periodType,
-            periodValue,
-            isLocked: true,
-            lockedAt: new Date().toISOString(),
-            lockedBy: activeAccount?.displayName || 'Ban Giám Hiệu',
-            reason: reason || 'Khóa sổ thi đua định kỳ',
-          },
-        ];
+        targetLock = {
+          periodType,
+          periodValue,
+          isLocked: true,
+          lockedAt: new Date().toISOString(),
+          lockedBy: activeAccount?.displayName || 'Ban Giám Hiệu',
+          reason: reason || 'Khóa sổ thi đua định kỳ',
+        };
+        next = [...prev, targetLock];
       }
+      savePeriodLockToCloud(targetLock).catch((e) => console.warn('Lock period cloud sync note:', e));
+      return next;
     });
   };
 
@@ -1429,6 +1431,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Add Student
   const addStudent = async (data: Omit<Student, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId'>): Promise<Student> => {
+    if (userRole === 'monitor') {
+      throw new Error('Lớp trưởng chỉ được phép chấm điểm nề nếp, không có quyền thêm học sinh mới vào danh sách lớp.');
+    }
     const teacherId = getEffectiveTeacherId();
     const token = data.parentLookupToken || Math.random().toString(36).substring(2, 12).toUpperCase();
     const newStudent: Student = {
@@ -1452,6 +1457,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Update Student
   const updateStudent = async (id: string, updates: Partial<Student>) => {
+    if (userRole === 'monitor') {
+      throw new Error('Lớp trưởng chỉ được phép chấm điểm nề nếp, không có quyền chỉnh sửa thông tin học sinh.');
+    }
     let updatedStudent: Student | null = null;
     setStudents((prev) =>
       prev.map((s) => {
@@ -1476,6 +1484,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Delete single student
   const deleteStudent = async (id: string, deleteRelatedLogs: boolean = true) => {
+    if (userRole === 'monitor') {
+      throw new Error('Lớp trưởng không có quyền xóa học sinh.');
+    }
     await deleteStudentsBatch([id], deleteRelatedLogs);
   };
 
@@ -1484,6 +1495,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     ids: string[],
     deleteRelatedLogs: boolean = true
   ): Promise<{ count: number }> => {
+    if (userRole === 'monitor') {
+      throw new Error('Lớp trưởng không có quyền xóa học sinh.');
+    }
     if (!ids || ids.length === 0) return { count: 0 };
     const idSet = new Set(ids);
 
@@ -1515,6 +1529,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Toggle active/inactive student
   const toggleStudentStatus = async (id: string) => {
+    if (userRole === 'monitor') {
+      throw new Error('Lớp trưởng không có quyền chuyển trạng thái học sinh.');
+    }
     const student = students.find((s) => s.id === id);
     if (!student) return;
     const newStatus = student.status === 'active' ? 'inactive' : 'active';
@@ -1525,6 +1542,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const importStudentsBatch = async (
     newStudents: Array<Omit<Student, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId'>>
   ): Promise<{ imported: number; updated: number }> => {
+    if (userRole === 'monitor') {
+      throw new Error('Lớp trưởng không có quyền nhập dữ liệu học sinh.');
+    }
     const teacherId = getEffectiveTeacherId();
     let imported = 0;
     let updated = 0;
@@ -1565,16 +1585,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setStudents(updatedList);
 
-    if (currentUser) {
-      try {
-        const batch = writeBatch(db);
-        updatedList.forEach((s) => {
-          batch.set(doc(db, 'students', s.id), s);
-        });
-        await batch.commit();
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'students_batch');
-      }
+    try {
+      const batch = writeBatch(db);
+      updatedList.forEach((s) => {
+        batch.set(doc(db, 'students', s.id), s);
+      });
+      await batch.commit();
+    } catch (err) {
+      console.warn('Batch student cloud save note:', err);
     }
 
     return { imported, updated };
@@ -1584,6 +1602,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const addBehaviorCategory = async (
     cat: Omit<BehaviorCategory, 'id' | 'createdAt' | 'updatedAt' | 'teacherId'>
   ): Promise<BehaviorCategory> => {
+    if (userRole === 'monitor') {
+      throw new Error('Lớp trưởng không có quyền thêm mới danh mục vi phạm.');
+    }
     const teacherId = getEffectiveTeacherId();
     const newCat: BehaviorCategory = {
       ...cat,
@@ -1595,43 +1616,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setBehaviorCategories((prev) => [...prev, newCat]);
 
-    if (currentUser) {
-      try {
-        await setDoc(doc(db, 'behaviorCategories', newCat.id), newCat);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `behaviorCategories/${newCat.id}`);
-      }
+    try {
+      await saveBehaviorCategoryToCloud(newCat);
+    } catch (err) {
+      console.warn('Category cloud save note:', err);
     }
     return newCat;
   };
 
   // Update Category
   const updateBehaviorCategory = async (id: string, updates: Partial<BehaviorCategory>) => {
+    if (userRole === 'monitor') {
+      throw new Error('Lớp trưởng không có quyền chỉnh sửa danh mục vi phạm.');
+    }
+    let updatedCat: BehaviorCategory | null = null;
     setBehaviorCategories((prev) =>
       prev.map((c) => {
         if (c.id !== id) return c;
-        return {
+        updatedCat = {
           ...c,
           ...updates,
           updatedAt: new Date().toISOString(),
         };
+        return updatedCat;
       })
     );
 
-    if (currentUser) {
-      const existing = behaviorCategories.find((c) => c.id === id);
-      if (existing) {
-        try {
-          await setDoc(doc(db, 'behaviorCategories', id), { ...existing, ...updates, updatedAt: new Date().toISOString() });
-        } catch (err) {
-          handleFirestoreError(err, OperationType.UPDATE, `behaviorCategories/${id}`);
-        }
+    if (updatedCat) {
+      try {
+        await saveBehaviorCategoryToCloud(updatedCat);
+      } catch (err) {
+        console.warn('Category update cloud note:', err);
       }
     }
   };
 
   // Toggle active category
   const toggleBehaviorCategoryActive = async (id: string) => {
+    if (userRole === 'monitor') {
+      throw new Error('Lớp trưởng không có quyền thay đổi trạng thái danh mục.');
+    }
     const cat = behaviorCategories.find((c) => c.id === id);
     if (!cat) return;
     await updateBehaviorCategory(id, { isActive: !cat.isActive });
@@ -1639,6 +1663,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Delete category: check if used in logs
   const deleteBehaviorCategory = async (id: string): Promise<{ success: boolean; message?: string }> => {
+    if (userRole === 'monitor') {
+      throw new Error('Lớp trưởng không có quyền xóa danh mục.');
+    }
     const cat = behaviorCategories.find((c) => c.id === id);
     if (!cat) return { success: false, message: 'Không tìm thấy danh mục' };
 
@@ -1653,29 +1680,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setBehaviorCategories((prev) => prev.filter((c) => c.id !== id));
 
-    if (currentUser) {
-      try {
-        await deleteDoc(doc(db, 'behaviorCategories', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `behaviorCategories/${id}`);
-      }
+    try {
+      await deleteDoc(doc(db, 'behaviorCategories', id));
+    } catch (err) {
+      console.warn('Category delete cloud note:', err);
     }
     return { success: true };
   };
 
   // Reset Behavior Categories to standard defaults (Thông tư Bộ GD&ĐT)
   const resetBehaviorCategoriesToDefault = async () => {
+    if (userRole === 'monitor') {
+      throw new Error('Lớp trưởng không có quyền khôi phục danh mục.');
+    }
     setBehaviorCategories(INITIAL_BEHAVIOR_CATEGORIES);
-    if (currentUser) {
-      try {
-        const batch = writeBatch(db);
-        INITIAL_BEHAVIOR_CATEGORIES.forEach((c) => {
-          batch.set(doc(db, 'behaviorCategories', c.id), c);
-        });
-        await batch.commit();
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'behaviorCategories_reset');
-      }
+    try {
+      const batch = writeBatch(db);
+      INITIAL_BEHAVIOR_CATEGORIES.forEach((c) => {
+        batch.set(doc(db, 'behaviorCategories', c.id), c);
+      });
+      await batch.commit();
+    } catch (err) {
+      console.warn('Reset categories cloud note:', err);
     }
   };
 
@@ -1906,9 +1932,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setDisciplineLogs((prev) => [...createdLogs, ...prev]);
 
-    // Async sync to cloud
-    for (const item of createdLogs) {
-      saveDisciplineLogToCloud(item).catch((err) => console.warn('Bulk log sync error:', err));
+    // Immediately save all logs into Cloud Firestore
+    try {
+      await Promise.all(createdLogs.map((item) => saveDisciplineLogToCloud(item)));
+    } catch (err) {
+      console.warn('Bulk log cloud sync error:', err);
     }
 
     return { logs: createdLogs };
@@ -1955,6 +1983,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Delete Discipline Log with period lock guard
   const deleteDisciplineLog = async (id: string, editorName: string) => {
+    if (userRole === 'monitor') {
+      throw new Error('Lớp trưởng không có quyền xóa bản ghi điểm nề nếp. Vui lòng báo Giáo viên chủ nhiệm!');
+    }
     const target = disciplineLogs.find((l) => l.id === id);
     if (target && isPeriodLocked('week', target.weekNumber)) {
       throw new Error(`Tuần ${target.weekNumber} đã được khóa thi đua. Không thể xóa bản ghi.`);
@@ -1973,6 +2004,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const importDisciplineLogsBatch = async (
     newLogs: Array<Omit<DisciplineLog, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId' | 'totalScore'>>
   ): Promise<{ imported: number }> => {
+    if (userRole === 'monitor') {
+      throw new Error('Lớp trưởng không có quyền tải tệp nhật ký lỗi hàng loạt.');
+    }
     if (!newLogs || newLogs.length === 0) return { imported: 0 };
     const teacherId = getEffectiveTeacherId();
     const nowIso = new Date().toISOString();
@@ -1997,20 +2031,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setDisciplineLogs((prev) => [...createdLogs, ...prev]);
 
-    if (currentUser) {
-      try {
-        const chunkSize = 400;
-        for (let i = 0; i < createdLogs.length; i += chunkSize) {
-          const chunk = createdLogs.slice(i, i + chunkSize);
-          const batch = writeBatch(db);
-          chunk.forEach((l) => {
-            batch.set(doc(db, 'disciplineLogs', l.id), l);
-          });
-          await batch.commit();
-        }
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'disciplineLogs_batch');
+    try {
+      const chunkSize = 400;
+      for (let i = 0; i < createdLogs.length; i += chunkSize) {
+        const chunk = createdLogs.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        chunk.forEach((l) => {
+          batch.set(doc(db, 'disciplineLogs', l.id), l);
+        });
+        await batch.commit();
       }
+    } catch (err) {
+      console.warn('Batch discipline logs cloud sync error:', err);
     }
 
     return { imported: createdLogs.length };

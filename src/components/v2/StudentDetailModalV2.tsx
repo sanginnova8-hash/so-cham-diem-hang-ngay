@@ -18,6 +18,7 @@ import {
 import { Student, DisciplineLog } from '../../types';
 import { formatVietnameseDate, formatVietnameseNumber, getRankBadgeClass } from '../../lib/utils';
 import { studentService } from '../../services/studentService';
+import { useApp } from '../../context/AppContext';
 
 interface StudentDetailModalV2Props {
   isOpen: boolean;
@@ -38,6 +39,7 @@ export const StudentDetailModalV2: React.FC<StudentDetailModalV2Props> = ({
   currentRank,
   onUpdateStudent,
 }) => {
+  const { userRole } = useApp();
   const [copiedToken, setCopiedToken] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -202,15 +204,17 @@ export const StudentDetailModalV2: React.FC<StudentDetailModalV2Props> = ({
                   Mã Tra Cứu Phụ Huynh Bảo Mật (Parent Token)
                 </span>
               </div>
-              <button
-                type="button"
-                disabled={isRegenerating}
-                onClick={handleRegenerateToken}
-                className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <RotateCw className={`h-3 w-3 ${isRegenerating ? 'animate-spin' : ''}`} />
-                <span>Cấp mã mới</span>
-              </button>
+              {userRole !== 'monitor' && (
+                <button
+                  type="button"
+                  disabled={isRegenerating}
+                  onClick={handleRegenerateToken}
+                  className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <RotateCw className={`h-3 w-3 ${isRegenerating ? 'animate-spin' : ''}`} />
+                  <span>Cấp mã mới</span>
+                </button>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
