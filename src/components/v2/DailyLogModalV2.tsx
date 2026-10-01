@@ -35,10 +35,16 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
     students,
     behaviorCategories,
     classConfig,
+    activeAccount,
+    userRole,
     isPeriodLocked,
     addDisciplineLog,
     addBulkDisciplineLogs,
   } = useApp();
+
+  const isMonitor = activeAccount?.role === 'monitor' || userRole === 'monitor';
+  const canAddViolations = isMonitor ? (activeAccount?.permissions?.canAddViolations ?? true) : true;
+  const canAddBonuses = isMonitor ? (activeAccount?.permissions?.canAddBonuses ?? true) : true;
 
   // Mode: Single vs Bulk
   const [logMode, setLogMode] = useState<'single' | 'bulk'>('single');
@@ -57,9 +63,12 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
     return 1;
   });
   const [lessonPeriod, setLessonPeriod] = useState<string>('Tiết 1');
-  const [reporter, setReporter] = useState<string>(
-    classConfig.homeroomTeacher || 'GVCN'
-  );
+  const [reporter, setReporter] = useState<string>(() => {
+    if (activeAccount?.role === 'monitor') {
+      return `Lớp trưởng ${activeAccount.displayName}`;
+    }
+    return classConfig.homeroomTeacher || 'GVCN';
+  });
   const [note, setNote] = useState<string>('');
   const [keepContextOpen, setKeepContextOpen] = useState<boolean>(true);
 
@@ -69,7 +78,10 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
   const [selectedBulkStudentIds, setSelectedBulkStudentIds] = useState<string[]>([]);
 
   // Category selection
-  const [categoryType, setCategoryType] = useState<BehaviorType>('deduct');
+  const [categoryType, setCategoryType] = useState<BehaviorType>(() => {
+    if (isMonitor && !canAddViolations && canAddBonuses) return 'bonus';
+    return 'deduct';
+  });
   const [categoryGroupFilter, setCategoryGroupFilter] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<BehaviorCategory | null>(null);
   const [customDescription, setCustomDescription] = useState<string>('');
@@ -347,6 +359,20 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
           </div>
         )}
 
+        {/* Monitor Role Banner */}
+        {isMonitor && (
+          <div className="px-5 py-2.5 bg-blue-50 dark:bg-blue-950/40 border-b border-blue-200 dark:border-blue-900/40 text-blue-900 dark:text-blue-200 text-xs flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-bold shrink-0">
+                LỚP TRƯỞNG
+              </span>
+              <span>
+                Em đang chấm điểm nề nếp cho Lớp <strong>{classConfig.className}</strong>. Người ghi nhận được hệ thống gắn tự động là <strong>Lớp trưởng {activeAccount?.displayName}</strong>.
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Success Toast inside modal */}
         {toastMessage && (
           <div className="px-5 py-2 bg-emerald-50 dark:bg-emerald-950/50 border-b border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs flex items-center justify-between">
@@ -510,29 +536,37 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
               <div className="flex gap-1 bg-slate-200 dark:bg-slate-800 p-0.5 rounded-lg text-xs">
                 <button
                   type="button"
+                  disabled={!canAddViolations}
                   onClick={() => {
                     setCategoryType('deduct');
                     setSelectedCategory(null);
                   }}
-                  className={`px-3 py-1 rounded-md transition cursor-pointer font-bold ${
+                  className={`px-3 py-1 rounded-md transition font-bold ${
                     categoryType === 'deduct'
                       ? 'bg-rose-600 text-white shadow'
-                      : 'text-slate-600 dark:text-slate-400'
+                      : !canAddViolations
+                      ? 'opacity-40 cursor-not-allowed text-slate-400'
+                      : 'text-slate-600 dark:text-slate-400 cursor-pointer'
                   }`}
+                  title={!canAddViolations ? 'GVCN chưa cấp quyền chấm điểm trừ cho Lớp trưởng' : ''}
                 >
                   Trừ Điểm Vi Phạm
                 </button>
                 <button
                   type="button"
+                  disabled={!canAddBonuses}
                   onClick={() => {
                     setCategoryType('bonus');
                     setSelectedCategory(null);
                   }}
-                  className={`px-3 py-1 rounded-md transition cursor-pointer font-bold ${
+                  className={`px-3 py-1 rounded-md transition font-bold ${
                     categoryType === 'bonus'
                       ? 'bg-emerald-600 text-white shadow'
-                      : 'text-slate-600 dark:text-slate-400'
+                      : !canAddBonuses
+                      ? 'opacity-40 cursor-not-allowed text-slate-400'
+                      : 'text-slate-600 dark:text-slate-400 cursor-pointer'
                   }`}
+                  title={!canAddBonuses ? 'GVCN chưa cấp quyền chấm điểm thưởng cho Lớp trưởng' : ''}
                 >
                   Cộng Điểm Thưởng
                 </button>

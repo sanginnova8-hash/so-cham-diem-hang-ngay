@@ -31,11 +31,13 @@ import {
   ArrowUp10,
   RotateCcw,
   Key,
+  Star,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Student, StudentStatus, RankLevel } from '../types';
 import { SmartStudentExcelImporter } from './v2/SmartStudentExcelImporter';
 import { StudentDetailModalV2 } from './v2/StudentDetailModalV2';
+import { CreateClassMonitorModal } from './v2/CreateClassMonitorModal';
 import {
   formatVietnameseDate,
   formatVietnameseNumber,
@@ -64,6 +66,8 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     students,
     disciplineLogs,
     classConfig,
+    userAccounts,
+    userRole,
     addStudent,
     updateStudent,
     deleteStudent,
@@ -74,6 +78,13 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     getWeeklySummary,
     getMonthlySummary,
   } = useApp();
+
+  const [isMonitorModalOpen, setIsMonitorModalOpen] = useState(false);
+
+  // Monitor account for current class
+  const monitorAccount = useMemo(() => {
+    return userAccounts.find((a) => a.role === 'monitor' && a.assignedClassId === classConfig.id);
+  }, [userAccounts, classConfig.id]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | StudentStatus>('all');
@@ -313,6 +324,17 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {userRole !== 'monitor' && (
+            <button
+              onClick={() => setIsMonitorModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs sm:text-sm font-semibold rounded-xl border border-indigo-200 dark:border-indigo-800 transition active:scale-95 shadow-xs"
+              title="Cấp tài khoản & quyền chấm điểm cho Lớp trưởng"
+            >
+              <UserCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+              <span>{monitorAccount ? 'Tài khoản Lớp trưởng' : '+ Cấp quyền Lớp trưởng'}</span>
+            </button>
+          )}
+
           <button
             onClick={() => setIsAddModalOpen(true)}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition active:scale-95"
@@ -630,9 +652,17 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                         {s.studentCode}
                       </td>
                       <td className="py-3 px-3">
-                        <span className="font-bold text-slate-900 dark:text-white block text-sm">
-                          {s.fullName}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-900 dark:text-white block text-sm">
+                            {s.fullName}
+                          </span>
+                          {(s.id === monitorAccount?.studentId || (monitorAccount && s.fullName.toLowerCase() === monitorAccount.displayName.toLowerCase()) || (classConfig.classPresident && s.fullName.toLowerCase() === classConfig.classPresident.toLowerCase())) && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-800 shrink-0" title="Lớp trưởng được phân quyền chấm điểm nề nếp">
+                              <Star className="h-3 w-3 fill-amber-400 text-amber-500" />
+                              <span>Lớp trưởng</span>
+                            </span>
+                          )}
+                        </div>
                         <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
                           {s.dateOfBirth && (
                             <span className="text-[10px] text-slate-400">
@@ -1052,6 +1082,15 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal Cấp / Đổi Mật Khẩu Tài Khoản Lớp Trưởng */}
+      {isMonitorModalOpen && (
+        <CreateClassMonitorModal
+          isOpen={isMonitorModalOpen}
+          onClose={() => setIsMonitorModalOpen(false)}
+          existingMonitor={monitorAccount}
+        />
       )}
     </div>
   );

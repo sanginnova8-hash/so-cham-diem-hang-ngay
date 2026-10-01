@@ -96,18 +96,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
           shortLabel: 'Danh sách',
           icon: Users,
         },
-        {
-          id: 'zalo-composer',
-          label: 'Liên hệ phụ huynh (Zalo)',
-          shortLabel: 'Gửi Zalo',
-          icon: MessageSquareText,
-        },
-        {
-          id: 'parent-report',
-          label: 'Phiếu báo phụ huynh',
-          shortLabel: 'Phiếu báo PH',
-          icon: MessageSquareShare,
-        },
+        ...(userRole !== 'monitor'
+          ? [
+              {
+                id: 'zalo-composer' as TabType,
+                label: 'Liên hệ phụ huynh (Zalo)',
+                shortLabel: 'Gửi Zalo',
+                icon: MessageSquareText,
+              },
+              {
+                id: 'parent-report' as TabType,
+                label: 'Phiếu báo phụ huynh',
+                shortLabel: 'Phiếu báo PH',
+                icon: MessageSquareShare,
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -146,12 +150,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           shortLabel: 'Biểu điểm',
           icon: Tag,
         },
-        {
-          id: 'settings',
-          label: 'Cài đặt & Sao lưu',
-          shortLabel: 'Cài đặt',
-          icon: Settings,
-        },
+        ...(userRole !== 'monitor'
+          ? [
+              {
+                id: 'settings' as TabType,
+                label: 'Cài đặt & Sao lưu',
+                shortLabel: 'Cài đặt',
+                icon: Settings,
+              },
+            ]
+          : []),
       ],
     },
     // RBAC: Khối Quản trị độc lập, chỉ Admin / Chủ hệ thống mới thấy (Teacher ẩn hoàn toàn)
@@ -372,7 +380,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {activeAccount.displayName}
                 </p>
                 <p className="text-[10px] text-slate-400 truncate">
-                  {userRole === 'owner' ? 'Chủ hệ thống' : userRole === 'admin' ? 'Ban Giám Hiệu' : `Lớp ${classConfig.className}`}
+                  {userRole === 'owner' ? 'Chủ hệ thống' : userRole === 'admin' ? 'Ban Giám Hiệu' : userRole === 'monitor' ? '⭐ Lớp trưởng chấm điểm' : `Lớp ${classConfig.className}`}
                 </p>
               </div>
             )}

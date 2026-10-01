@@ -198,6 +198,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onNavig
                       ? 'Chủ hệ thống'
                       : userRole === 'admin'
                       ? 'Ban Giám Hiệu'
+                      : userRole === 'monitor'
+                      ? '⭐ Lớp trưởng chấm điểm'
                       : 'Giáo viên chủ nhiệm'}
                   </p>
                   <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 mt-0.5">
@@ -500,6 +502,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onNavig
                         Nếu quên mật khẩu, thầy cô vui lòng báo Ban Giám Hiệu để được cấp lại mật khẩu ngay trong mục <strong>Quản trị → Người dùng & Phân công</strong>.
                       </div>
                     )}
+
+                    {/* Class Monitor Quick Login Tip */}
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-left">
+                      <div className="p-2.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/50 space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-[11px] text-indigo-900 dark:text-indigo-300">
+                          <UserCheck className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                          <span>Em là Lớp trưởng chấm điểm nề nếp?</span>
+                        </div>
+                        <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                          Đăng nhập bằng Tên đăng nhập & Mật khẩu do Thầy/Cô chủ nhiệm cấp (vd: <span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold">lt_10a8</span> / <span className="font-mono text-rose-600 dark:text-rose-400 font-bold">123456</span>).
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </form>
               </div>

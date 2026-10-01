@@ -4,7 +4,7 @@ export type StudentStatus = 'active' | 'inactive';
 
 export type RankLevel = 'Xuất sắc' | 'Tốt' | 'Khá' | 'Trung bình' | 'Yếu';
 
-export type UserRole = 'guest' | 'teacher' | 'admin' | 'owner';
+export type UserRole = 'guest' | 'teacher' | 'admin' | 'owner' | 'monitor';
 
 export interface UserAccount {
   uid: string;
@@ -21,6 +21,12 @@ export interface UserAccount {
   isActive: boolean;
   lastLoginAt?: string;
   avatarUrl?: string;
+  studentId?: string; // Link to student ID if monitor
+  permissions?: {
+    canAddViolations: boolean;
+    canAddBonuses: boolean;
+    canViewScores: boolean;
+  };
 }
 
 export interface SchoolClass {

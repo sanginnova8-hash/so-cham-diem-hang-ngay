@@ -68,6 +68,26 @@ export const INITIAL_USER_ACCOUNTS: UserAccount[] = [
     lastLoginAt: '2026-09-20 09:12',
     avatarUrl: '',
   },
+  {
+    uid: 'monitor_10a8',
+    email: 'loptruong.10a8@cdnghe01bqp.edu.vn',
+    username: 'lt_10a8',
+    displayName: 'Nguyễn Văn An (Lớp trưởng 10A8)',
+    role: 'monitor',
+    assignedClassId: '10A8',
+    assignedClassName: 'Lớp 10A8 (Điện CN K45)',
+    department: 'Khoa Điện - Điện tử',
+    phone: '0978.123.456',
+    password: '123',
+    isActive: true,
+    lastLoginAt: '2026-09-28 09:00',
+    avatarUrl: '',
+    permissions: {
+      canAddViolations: true,
+      canAddBonuses: true,
+      canViewScores: true,
+    },
+  },
 ];
 
 export const INITIAL_SCHOOL_CLASSES: SchoolClass[] = [

@@ -22,6 +22,7 @@ import {
   Trash2,
   Power,
   User,
+  UserCheck,
   School,
   Phone,
   Mail,
@@ -37,6 +38,7 @@ import { useApp } from '../context/AppContext';
 import { PWAInstallButton } from './PWAInstallButton';
 import { formatVietnameseDate, formatVietnameseNumber } from '../lib/utils';
 import { BehaviorCategory, AchievementBonusRule } from '../types';
+import { ClassMonitorManagementCard } from './v2/ClassMonitorManagementCard';
 
 export const SettingsBackupView: React.FC = () => {
   const {
@@ -66,7 +68,7 @@ export const SettingsBackupView: React.FC = () => {
     resetToSampleData,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'class' | 'violations' | 'achievements' | 'cloud' | 'backup'>('class');
+  const [activeTab, setActiveTab] = useState<'class' | 'monitor' | 'violations' | 'achievements' | 'cloud' | 'backup'>('class');
 
   // Teacher & Class Config Form state
   const [homeroomTeacher, setHomeroomTeacher] = useState(classConfig.homeroomTeacher || '');
@@ -253,6 +255,18 @@ export const SettingsBackupView: React.FC = () => {
         >
           <User className="h-4 w-4" />
           <span>Thông Tin GV & Lớp Học</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('monitor')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition ${
+            activeTab === 'monitor'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700'
+          }`}
+        >
+          <UserCheck className="h-4 w-4 text-emerald-500" />
+          <span>Tài Khoản Lớp Trưởng</span>
         </button>
 
         <button
@@ -655,6 +669,18 @@ export const SettingsBackupView: React.FC = () => {
               </button>
             </div>
           </form>
+
+          {/* Cấp Quyền & Quản Lý Tài Khoản Lớp Trưởng Chấm Điểm */}
+          <div className="pt-4 border-t border-slate-100 dark:border-slate-700">
+            <ClassMonitorManagementCard />
+          </div>
+        </div>
+      )}
+
+      {/* TAB RIÊNG: TÀI KHOẢN LỚP TRƯỞNG CHẤM ĐIỂM */}
+      {activeTab === 'monitor' && (
+        <div className="max-w-4xl space-y-4">
+          <ClassMonitorManagementCard />
         </div>
       )}
 

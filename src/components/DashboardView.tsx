@@ -13,10 +13,13 @@ import {
   Info,
   UserCog,
   MessageSquareText,
+  UserCheck,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { formatVietnameseDate, formatVietnameseNumber, getRankBadgeClass } from '../lib/utils';
 import { TabType } from './Navbar';
+import { ClassMonitorManagementCard } from './v2/ClassMonitorManagementCard';
+import { CreateClassMonitorModal } from './v2/CreateClassMonitorModal';
 
 interface DashboardViewProps {
   onNavigateTab: (tab: TabType) => void;
@@ -31,7 +34,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenNewLogModal,
   onOpenEditClassTeacherModal,
 }) => {
-  const { classConfig, students, disciplineLogs, getWeeklySummary, getMonthlySummary } = useApp();
+  const { classConfig, students, disciplineLogs, userAccounts, userRole, getWeeklySummary, getMonthlySummary } = useApp();
+
+  const [isMonitorModalOpen, setIsMonitorModalOpen] = useState(false);
+
+  // Monitor account for current class
+  const monitorAccount = useMemo(() => {
+    return userAccounts.find((a) => a.role === 'monitor' && a.assignedClassId === classConfig.id);
+  }, [userAccounts, classConfig.id]);
 
   // State for filters
   const [selectedMonth, setSelectedMonth] = useState<number>(9);
@@ -165,6 +175,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <MessageSquareText className="h-3.5 w-3.5" />
                 <span>Soạn tin Zalo</span>
               </button>
+
+              {userRole !== 'monitor' && (
+                <button
+                  type="button"
+                  onClick={() => setIsMonitorModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-semibold rounded-xl border border-indigo-200 dark:border-indigo-800 transition active:scale-95 shadow-xs"
+                  title="Cấp tài khoản & phân quyền cho Lớp trưởng tự chấm điểm nề nếp"
+                >
+                  <UserCheck className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>{monitorAccount ? 'Tài khoản Lớp trưởng' : '+ Cấp quyền Lớp trưởng'}</span>
+                </button>
+              )}
 
               {onOpenEditClassTeacherModal && (
                 <button
@@ -604,6 +626,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* KHỐI QUẢN LÝ TÀI KHOẢN LỚP TRƯỞNG CHẤM ĐIỂM NỀ NẾP */}
+      {userRole !== 'monitor' && (
+        <div className="pt-2">
+          <ClassMonitorManagementCard />
+        </div>
+      )}
+
+      {/* MODAL CẤP / ĐỔI MẬT KHẨU TÀI KHOẢN LỚP TRƯỞNG */}
+      {isMonitorModalOpen && (
+        <CreateClassMonitorModal
+          isOpen={isMonitorModalOpen}
+          onClose={() => setIsMonitorModalOpen(false)}
+          existingMonitor={monitorAccount}
+        />
+      )}
     </div>
   );
 };

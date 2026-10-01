@@ -57,6 +57,16 @@ function MainApp() {
     if (userRole === 'teacher' && activeTab === 'admin') {
       setActiveTab('dashboard');
     }
+    if (userRole === 'monitor') {
+      if (
+        activeTab === 'admin' ||
+        activeTab === 'settings' ||
+        activeTab === 'zalo-composer' ||
+        activeTab === 'parent-report'
+      ) {
+        setActiveTab('daily-log');
+      }
+    }
   }, [userRole, activeTab]);
 
   // Command palette listener

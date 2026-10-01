@@ -194,7 +194,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                     {activeAccount.displayName}
                   </span>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
-                    {userRole === 'owner' ? 'Chủ hệ thống' : userRole === 'admin' ? 'Ban Giám Hiệu' : 'GV Chủ nhiệm'}
+                    {userRole === 'owner' ? 'Chủ hệ thống' : userRole === 'admin' ? 'Ban Giám Hiệu' : userRole === 'monitor' ? '⭐ Lớp trưởng' : 'GV Chủ nhiệm'}
                   </span>
                 </div>
                 <ChevronDown
@@ -217,7 +217,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                     </p>
                     <div className="mt-1.5 flex items-center gap-1.5">
                       <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                        {userRole === 'owner' ? '👑 Chủ hệ thống' : userRole === 'admin' ? '🛡 Ban Giám Hiệu' : '👨‍🏫 Giáo viên'}
+                        {userRole === 'owner' ? '👑 Chủ hệ thống' : userRole === 'admin' ? '🛡 Ban Giám Hiệu' : userRole === 'monitor' ? '⭐ Lớp trưởng chấm điểm' : '👨‍🏫 Giáo viên'}
                       </span>
                       <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
                         • Lớp {classConfig.className}
@@ -227,7 +227,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
                   {/* Menu items */}
                   <div className="py-1">
-                    {onOpenEditClassTeacherModal && (
+                    {userRole !== 'monitor' && onOpenEditClassTeacherModal && (
                       <button
                         type="button"
                         onClick={() => {
@@ -241,6 +241,20 @@ export const TopBar: React.FC<TopBarProps> = ({
                       </button>
                     )}
 
+                    {userRole !== 'monitor' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileOpen(false);
+                          onNavigateTab('settings');
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-200 flex items-center gap-2.5 transition cursor-pointer"
+                      >
+                        <UserCheck className="h-4 w-4 text-indigo-500" />
+                        <span>Tài khoản Lớp trưởng chấm điểm</span>
+                      </button>
+                    )}
+
                     {onOpenLoginModal && (
                       <button
                         type="button"
@@ -250,22 +264,24 @@ export const TopBar: React.FC<TopBarProps> = ({
                         }}
                         className="w-full text-left px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-200 flex items-center gap-2.5 transition cursor-pointer"
                       >
-                        <UserCheck className="h-4 w-4 text-indigo-500" />
-                        <span>Quản lý tài khoản & Phiên làm việc</span>
+                        <UserCheck className="h-4 w-4 text-emerald-500" />
+                        <span>Đổi tài khoản / Đăng nhập</span>
                       </button>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileOpen(false);
-                        onNavigateTab('settings');
-                      }}
-                      className="w-full text-left px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-200 flex items-center gap-2.5 transition cursor-pointer"
-                    >
-                      <Settings className="h-4 w-4 text-slate-400" />
-                      <span>Cài đặt & Sao lưu dữ liệu</span>
-                    </button>
+                    {userRole !== 'monitor' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileOpen(false);
+                          onNavigateTab('settings');
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-200 flex items-center gap-2.5 transition cursor-pointer"
+                      >
+                        <Settings className="h-4 w-4 text-slate-400" />
+                        <span>Cài đặt & Sao lưu dữ liệu</span>
+                      </button>
+                    )}
                   </div>
 
                   <div className="border-t border-slate-100 dark:border-slate-800 pt-1">

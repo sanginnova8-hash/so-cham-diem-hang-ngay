@@ -397,9 +397,16 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
                         {log.periodOrTime || '—'}
                       </td>
                       <td className="py-3 px-3 text-slate-600 dark:text-slate-400 max-w-[180px]">
-                        <span className="font-medium text-slate-800 dark:text-slate-200 block truncate">
-                          {log.reporter || classConfig.homeroomTeacher}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
+                            {log.reporter || classConfig.homeroomTeacher}
+                          </span>
+                          {log.reporter && log.reporter.toLowerCase().includes('lớp trưởng') && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 shrink-0">
+                              ⭐ Lớp trưởng
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[10px] text-slate-400 block truncate" title={log.basisOrRegulation}>
                           {log.basisOrRegulation || 'Nội quy lớp'}
                         </span>

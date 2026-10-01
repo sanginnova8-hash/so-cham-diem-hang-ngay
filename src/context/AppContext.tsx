@@ -121,6 +121,20 @@ interface AppContextType {
   toggleUserAccountStatus: (uid: string) => void;
   deleteUserAccount: (uid: string) => void;
   addUserAccount: (acc: Omit<UserAccount, 'uid' | 'lastLoginAt'>) => UserAccount;
+  createClassMonitorAccount: (params: {
+    studentId?: string;
+    fullName: string;
+    username: string;
+    password?: string;
+    phone?: string;
+    permissions?: {
+      canAddViolations: boolean;
+      canAddBonuses: boolean;
+      canViewScores: boolean;
+    };
+  }) => Promise<UserAccount>;
+  getClassMonitorAccount: (classId?: string) => UserAccount | undefined;
+  toggleMonitorPermission: (uid: string, key: 'canAddViolations' | 'canAddBonuses' | 'canViewScores') => void;
   deleteSchoolClass: (classId: string) => void;
   purgeOrphanedClasses: () => number;
   addSchoolClass: (cls: SchoolClass) => void;
@@ -506,6 +520,102 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return newAcc;
   };
 
+  const getClassMonitorAccount = (classId?: string): UserAccount | undefined => {
+    const targetClassId = classId || classConfig.id;
+    return userAccounts.find(
+      (a) => a.role === 'monitor' && a.assignedClassId === targetClassId
+    );
+  };
+
+  const createClassMonitorAccount = async (params: {
+    studentId?: string;
+    fullName: string;
+    username: string;
+    password?: string;
+    phone?: string;
+    permissions?: {
+      canAddViolations: boolean;
+      canAddBonuses: boolean;
+      canViewScores: boolean;
+    };
+  }): Promise<UserAccount> => {
+    const classId = classConfig.id;
+    const className = classConfig.className;
+
+    // Check if monitor account for this class already exists
+    const existingIndex = userAccounts.findIndex(
+      (a) => a.role === 'monitor' && a.assignedClassId === classId
+    );
+
+    const newMonitorAccount: UserAccount = {
+      uid: existingIndex >= 0 ? userAccounts[existingIndex].uid : `monitor_${classId}_${Date.now()}`,
+      email: `${params.username.toLowerCase()}@school.local`,
+      username: params.username,
+      displayName: params.fullName,
+      role: 'monitor',
+      assignedClassId: classId,
+      assignedClassName: className,
+      department: (activeAccount?.department) || 'Khoa Chuyên Môn',
+      phone: params.phone || '',
+      password: params.password || '123456',
+      isActive: true,
+      lastLoginAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+      studentId: params.studentId,
+      permissions: params.permissions || {
+        canAddViolations: true,
+        canAddBonuses: true,
+        canViewScores: true,
+      },
+    };
+
+    if (existingIndex >= 0) {
+      setUserAccounts((prev) => {
+        const next = [...prev];
+        next[existingIndex] = newMonitorAccount;
+        return next;
+      });
+    } else {
+      setUserAccounts((prev) => [...prev, newMonitorAccount]);
+    }
+
+    // Also update classConfig's classPresident name
+    if (params.fullName) {
+      await updateClassConfig({ classPresident: params.fullName });
+    }
+
+    try {
+      await saveUserToCloud(newMonitorAccount);
+    } catch (err) {
+      console.warn('Notice saving monitor to cloud:', err);
+    }
+
+    return newMonitorAccount;
+  };
+
+  const toggleMonitorPermission = (uid: string, key: 'canAddViolations' | 'canAddBonuses' | 'canViewScores') => {
+    setUserAccounts((prev) =>
+      prev.map((acc) => {
+        if (acc.uid !== uid) return acc;
+        const currentPerms = acc.permissions || {
+          canAddViolations: true,
+          canAddBonuses: true,
+          canViewScores: true,
+        };
+        const updated = {
+          ...acc,
+          permissions: {
+            ...currentPerms,
+            [key]: !currentPerms[key],
+          },
+        };
+        try {
+          saveUserToCloud(updated);
+        } catch (e) {}
+        return updated;
+      })
+    );
+  };
+
   // Initialize from LocalStorage or seed data
   useEffect(() => {
     try {
@@ -655,20 +765,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   );
 
   const getEffectiveTeacherId = (): string => {
+    if (activeAccount?.role === 'monitor') {
+      const matchedTeacher = userAccounts.find(
+        (a) => (a.role === 'teacher' || a.role === 'owner') && a.assignedClassId === activeAccount.assignedClassId
+      );
+      if (matchedTeacher) return matchedTeacher.uid;
+      return classConfig.id;
+    }
     return activeAccount?.uid || (currentUser ? currentUser.uid : INITIAL_TEACHER_ID);
   };
 
   // Load user data from Cloud Firestore
-  const loadUserDataFromFirestore = async (userId: string) => {
+  const loadUserDataFromFirestore = async (userId: string, accountObj?: UserAccount) => {
     setIsCloudSyncing(true);
     setCloudSyncError(null);
     try {
+      const currentAcc = accountObj || activeAccount || userAccounts.find((a) => a.uid === userId);
+      let targetTeacherId = userId;
+      const isMonitorUser = currentAcc?.role === 'monitor';
+      if (isMonitorUser && currentAcc) {
+        const matchedTeacher = userAccounts.find(
+          (a) => (a.role === 'teacher' || a.role === 'owner') && a.assignedClassId === currentAcc.assignedClassId
+        );
+        if (matchedTeacher) {
+          targetTeacherId = matchedTeacher.uid;
+        } else {
+          targetTeacherId = currentAcc.assignedClassId || INITIAL_TEACHER_ID;
+        }
+      }
+
       // Load config
-      const configQuery = query(collection(db, 'classConfigs'), where('teacherId', '==', userId));
+      const configQuery = query(collection(db, 'classConfigs'), where('teacherId', '==', targetTeacherId));
       const configSnap = await getDocs(configQuery);
       if (!configSnap.empty) {
         setClassConfig(configSnap.docs[0].data() as ClassConfig);
-      } else {
+      } else if (!isMonitorUser) {
         // First time cloud user: save initial config
         const newConfig = { ...INITIAL_CLASS_CONFIG, teacherId: userId };
         await setDoc(doc(db, 'classConfigs', newConfig.id), newConfig);
@@ -676,12 +807,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       // Load students
-      const studentsQuery = query(collection(db, 'students'), where('teacherId', '==', userId));
+      const studentsQuery = query(collection(db, 'students'), where('teacherId', '==', targetTeacherId));
       const studentsSnap = await getDocs(studentsQuery);
       if (!studentsSnap.empty) {
         const loadedStudents = studentsSnap.docs.map((d) => d.data() as Student);
         setStudents(loadedStudents);
-      } else {
+      } else if (!isMonitorUser) {
         // Upload initial sample students for the teacher
         const batch = writeBatch(db);
         const mappedStudents = INITIAL_STUDENTS.map((s) => ({ ...s, teacherId: userId }));
@@ -693,12 +824,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       // Load categories
-      const catQuery = query(collection(db, 'behaviorCategories'), where('teacherId', '==', userId));
+      const catQuery = query(collection(db, 'behaviorCategories'), where('teacherId', '==', targetTeacherId));
       const catSnap = await getDocs(catQuery);
       if (!catSnap.empty) {
         const loadedCats = catSnap.docs.map((d) => d.data() as BehaviorCategory);
         setBehaviorCategories(loadedCats);
-      } else {
+      } else if (!isMonitorUser) {
         const batch = writeBatch(db);
         const mappedCats = INITIAL_BEHAVIOR_CATEGORIES.map((c) => ({ ...c, teacherId: userId }));
         mappedCats.forEach((c) => {
@@ -709,12 +840,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       // Load logs
-      const logQuery = query(collection(db, 'disciplineLogs'), where('teacherId', '==', userId));
+      const logQuery = query(collection(db, 'disciplineLogs'), where('teacherId', '==', targetTeacherId));
       const logSnap = await getDocs(logQuery);
       if (!logSnap.empty) {
         const loadedLogs = logSnap.docs.map((d) => d.data() as DisciplineLog);
         setDisciplineLogs(loadedLogs);
-      } else {
+      } else if (!isMonitorUser) {
         const batch = writeBatch(db);
         const mappedLogs = INITIAL_DISCIPLINE_LOGS.map((l) => ({ ...l, teacherId: userId }));
         mappedLogs.forEach((l) => {
@@ -1149,7 +1280,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       (a) =>
         (a.username && a.username.toLowerCase() === cleanId) ||
         a.email.toLowerCase() === cleanId ||
-        a.email.toLowerCase() === `${cleanId}@cdnghe01bqp.edu.vn`
+        a.email.toLowerCase() === `${cleanId}@cdnghe01bqp.edu.vn` ||
+        a.email.toLowerCase() === `${cleanId}@school.local`
     );
 
     if (!matchedAcc) {
@@ -1159,7 +1291,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           (a) =>
             (a.username && a.username.toLowerCase() === cleanId) ||
             a.email.toLowerCase() === cleanId ||
-            a.email.toLowerCase() === `${cleanId}@cdnghe01bqp.edu.vn`
+            a.email.toLowerCase() === `${cleanId}@cdnghe01bqp.edu.vn` ||
+            a.email.toLowerCase() === `${cleanId}@school.local`
         );
       } catch (e) {
         console.warn('Cloud users lookup note:', e);
@@ -1167,6 +1300,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     if (matchedAcc) {
+      if (matchedAcc.isActive === false) {
+        setIsCloudSyncing(false);
+        throw new Error('Tài khoản này đang bị tạm khóa quyền truy cập. Vui lòng liên hệ Thầy/Cô chủ nhiệm hoặc Ban Giám Hiệu.');
+      }
+
       // Check password if stored
       if (matchedAcc.password && matchedAcc.password !== pass) {
         setIsCloudSyncing(false);
@@ -1176,7 +1314,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setActiveAccount(matchedAcc);
       setUserRole(matchedAcc.role);
       setIsLocalMode(false);
-      await loadUserDataFromFirestore(matchedAcc.uid);
+      await loadUserDataFromFirestore(matchedAcc.uid, matchedAcc);
       setIsCloudSyncing(false);
       return;
     }
@@ -1672,7 +1810,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       throw new Error(`Tuần ${logData.weekNumber} đã được khóa thi đua bởi Ban Giám Hiệu. Không thể thêm mới dữ liệu.`);
     }
 
+    if (activeAccount?.role === 'monitor') {
+      if (logData.type === 'deduct' && activeAccount.permissions && !activeAccount.permissions.canAddViolations) {
+        throw new Error('Tài khoản Lớp trưởng chưa được cấp quyền ghi nhận điểm trừ vi phạm.');
+      }
+      if (logData.type === 'bonus' && activeAccount.permissions && !activeAccount.permissions.canAddBonuses) {
+        throw new Error('Tài khoản Lớp trưởng chưa được cấp quyền ghi nhận điểm thưởng thi đua.');
+      }
+    }
+
     const teacherId = getEffectiveTeacherId();
+    const effectiveReporter = logData.reporter || (activeAccount?.role === 'monitor' ? `Lớp trưởng ${activeAccount.displayName}` : classConfig.homeroomTeacher || 'GVCN');
 
     // Check potential duplicate (same student, same date, same behaviorCode, and period if filled)
     const isDuplicate = disciplineLogs.some(
@@ -1685,6 +1833,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const newLog: DisciplineLog = {
       ...logData,
+      reporter: effectiveReporter,
       id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       totalScore: Math.round(logData.scorePerUnit * logData.count * 100) / 100,
       teacherId,
@@ -1694,7 +1843,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       history: [
         {
           timestamp: new Date().toISOString(),
-          editorName: logData.reporter || classConfig.homeroomTeacher || 'Giáo viên',
+          editorName: effectiveReporter,
           action: 'create',
           newValue: `Tạo mới: ${logData.behaviorCode} - ${logData.behaviorDescription} (${logData.count} lần, ${logData.scorePerUnit}đ)`,
         },
@@ -1723,11 +1872,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       throw new Error(`Tuần ${first.weekNumber} đã được khóa thi đua. Không thể thực hiện ghi nhận hàng loạt.`);
     }
 
+    if (activeAccount?.role === 'monitor') {
+      if (first.type === 'deduct' && activeAccount.permissions && !activeAccount.permissions.canAddViolations) {
+        throw new Error('Tài khoản Lớp trưởng chưa được cấp quyền ghi nhận điểm trừ vi phạm.');
+      }
+      if (first.type === 'bonus' && activeAccount.permissions && !activeAccount.permissions.canAddBonuses) {
+        throw new Error('Tài khoản Lớp trưởng chưa được cấp quyền ghi nhận điểm thưởng thi đua.');
+      }
+    }
+
     const teacherId = getEffectiveTeacherId();
     const nowIso = new Date().toISOString();
+    const effectiveReporter = first.reporter || (activeAccount?.role === 'monitor' ? `Lớp trưởng ${activeAccount.displayName}` : classConfig.homeroomTeacher || 'GVCN');
 
     const createdLogs: DisciplineLog[] = logsData.map((data, idx) => ({
       ...data,
+      reporter: data.reporter || effectiveReporter,
       id: `log_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
       totalScore: Math.round(data.scorePerUnit * data.count * 100) / 100,
       teacherId,
@@ -1737,7 +1897,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       history: [
         {
           timestamp: nowIso,
-          editorName: data.reporter || classConfig.homeroomTeacher || 'Giáo viên',
+          editorName: data.reporter || effectiveReporter,
           action: 'create',
           newValue: `Ghi nhận hàng loạt: ${data.behaviorCode} - ${data.behaviorDescription} (${data.scorePerUnit}đ)`,
         },
@@ -2179,6 +2339,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         toggleUserAccountStatus,
         deleteUserAccount,
         addUserAccount,
+        createClassMonitorAccount,
+        getClassMonitorAccount,
+        toggleMonitorPermission,
         deleteSchoolClass,
         purgeOrphanedClasses,
         addSchoolClass,
