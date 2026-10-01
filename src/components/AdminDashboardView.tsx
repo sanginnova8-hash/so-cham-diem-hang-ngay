@@ -80,6 +80,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
   const [newTeacherForm, setNewTeacherForm] = useState({
     displayName: '',
     email: '',
+    password: '123456',
     role: 'teacher' as UserRole,
     assignedClassId: '10A8',
     assignedClassName: 'Lớp 10A8 (Điện CN)',
@@ -130,6 +131,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
     setNewTeacherForm({
       displayName: '',
       email: '',
+      password: '123456',
       role: 'teacher',
       assignedClassId: '10A8',
       assignedClassName: 'Lớp 10A8 (Điện CN)',
@@ -644,8 +646,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                     <td className="py-3 px-3 font-bold text-slate-900 dark:text-white">
                       {acc.displayName}
                     </td>
-                    <td className="py-3 px-3 text-slate-500 font-mono">
-                      {acc.email}
+                    <td className="py-3 px-3 font-mono text-xs">
+                      <div className="text-slate-800 dark:text-slate-200 font-medium">{acc.email}</div>
+                      <div className="text-[10px] text-slate-400 font-sans mt-0.5">
+                        Mật khẩu: <span className="font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1 py-0.5 rounded border border-amber-200 dark:border-amber-800/60">{acc.password || '123456'}</span>
+                      </div>
                     </td>
                     <td className="py-3 px-3 text-slate-600 dark:text-slate-300">
                       {acc.department || 'Chưa cập nhật'}
@@ -877,6 +882,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
                   required
                 />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Mật khẩu đăng nhập ban đầu:
+                </label>
+                <input
+                  type="text"
+                  placeholder="Mặc định: 123456"
+                  value={newTeacherForm.password}
+                  onChange={(e) => setNewTeacherForm({ ...newTeacherForm, password: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-xs"
+                  required
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Giáo viên sẽ sử dụng Email và mật khẩu này để đăng nhập vào hệ thống.
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
