@@ -125,37 +125,16 @@ export function exportToCsv(data: Record<string, any>[], fileName: string) {
  */
 export function downloadStudentTemplate() {
   const template = [
-    {
-      'Mã học sinh': 'HS10A801',
-      'Họ đệm': 'Nguyễn Văn',
-      'Tên': 'An',
-      'Ngày sinh': '15/05/2011',
-      'Giới tính': 'Nam',
-      'Điện thoại phụ huynh': '0912345678',
-      'Tên phụ huynh': 'Nguyễn Văn Hùng',
-    },
-    {
-      'Mã học sinh': 'HS10A802',
-      'Họ đệm': 'Trần Thị',
-      'Tên': 'Bình',
-      'Ngày sinh': '20/08/2011',
-      'Giới tính': 'Nữ',
-      'Điện thoại phụ huynh': '0987654321',
-      'Tên phụ huynh': 'Lê Thị Mai',
-    },
-    {
-      'Mã học sinh': 'HS10A803',
-      'Họ đệm': 'Lê Hoàng',
-      'Tên': 'Bảo',
-      'Ngày sinh': '12/11/2011',
-      'Giới tính': 'Nam',
-      'Điện thoại phụ huynh': '0903123456',
-      'Tên phụ huynh': 'Lê Hoàng Nam',
-    },
+    { 'Mã học sinh': '419', 'Họ đệm': 'Nguyễn Văn', 'Tên': 'Trọng', 'Giới tính': 'Nam', 'Dân tộc': 'Dao', 'Ngày sinh': '16/05/2011', 'Điện thoại phụ huynh': '0912345678', 'Tên phụ huynh': 'Nguyễn Văn Hùng' },
+    { 'Mã học sinh': '421', 'Họ đệm': 'Chu Văn', 'Tên': 'Thương', 'Giới tính': 'Nam', 'Dân tộc': 'Cao Lan', 'Ngày sinh': '15/01/2011', 'Điện thoại phụ huynh': '0987654321', 'Tên phụ huynh': 'Lê Thị Mai' },
+    { 'Mã học sinh': '1257', 'Họ đệm': 'Nguyễn Thị', 'Tên': 'Linh', 'Giới tính': 'Nữ', 'Dân tộc': 'Tày', 'Ngày sinh': '24/10/2011', 'Điện thoại phụ huynh': '', 'Tên phụ huynh': '' },
   ];
-  exportToExcel(template, 'Mau_nhap_danh_sach_hoc_sinh_10A8', 'DanhSachHocSinh');
+  const worksheet = XLSX.utils.json_to_sheet(template);
+  worksheet['!cols'] = [14, 22, 16, 12, 14, 14, 25, 25].map((wch) => ({ wch }));
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'DanhSachHocSinh');
+  XLSX.writeFile(workbook, 'Mau_nhap_danh_sach_hoc_sinh.xlsx');
 }
-
 /**
  * Flexible date parser for Excel/CSV inputs
  * Handles Excel serial numbers, DD/MM/YYYY, YYYY-MM-DD, ISO strings

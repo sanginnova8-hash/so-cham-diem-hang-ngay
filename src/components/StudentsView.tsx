@@ -297,6 +297,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
       STT: idx + 1,
       'Mã học sinh': s.studentCode,
       'Họ đệm': s.lastName,
+      'Dân tộc': s.ethnicity || '',
       'Tên': s.firstName,
       'Họ và tên': s.fullName,
       'Ngày sinh': formatVietnameseDate(s.dateOfBirth),

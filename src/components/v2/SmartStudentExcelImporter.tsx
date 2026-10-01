@@ -25,6 +25,7 @@ interface ParsedStudentRow {
   fullName: string;
   dateOfBirth?: string;
   gender?: 'Nam' | 'Nữ';
+  ethnicity?: string;
   parentName?: string;
   parentPhone?: string;
   status: 'new' | 'duplicate' | 'error';
@@ -123,7 +124,7 @@ export const SmartStudentExcelImporter: React.FC<SmartStudentExcelImporterProps>
         const worksheet = workbook.Sheets[sheetName];
 
         // Parse to JSON array of objects
-        const rawJson: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+        const rawJson: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: false });
 
         if (rawJson.length < 2) {
           alert('Tệp không có dữ liệu học sinh hoặc thiếu dòng tiêu đề.');
@@ -174,6 +175,13 @@ export const SmartStudentExcelImporter: React.FC<SmartStudentExcelImporterProps>
               tempMap.dob = colIdx;
             } else if (rawHeader.includes('gioi tinh') || rawHeader.includes('phai') || rawHeader === 'gt') {
               tempMap.gender = colIdx;
+            } else if (rawHeader.includes('dan toc')) {
+              tempMap.ethnicity = colIdx;
+            } else if (
+              rawHeader.includes('sdt') || rawHeader.includes('dien thoai') ||
+              rawHeader.includes('so dt') || rawHeader.includes('phone')
+            ) {
+              tempMap.parentPhone = colIdx;
             } else if (
               rawHeader.includes('phu huynh') ||
               rawHeader.includes('ten cha me') ||
@@ -276,6 +284,7 @@ export const SmartStudentExcelImporter: React.FC<SmartStudentExcelImporterProps>
             fullName: resolvedFullName,
             dateOfBirth: rawDob,
             gender: normalizedGender,
+            ethnicity: colMap.ethnicity !== undefined ? String(rowData[colMap.ethnicity]).trim() : '',
             parentName: rawParentName,
             parentPhone: rawParentPhone,
             status,
@@ -334,6 +343,7 @@ export const SmartStudentExcelImporter: React.FC<SmartStudentExcelImporterProps>
         fullName: r.fullName,
         dateOfBirth: r.dateOfBirth,
         gender: r.gender,
+        ethnicity: r.ethnicity,
         status: 'active' as const,
         parentName: r.parentName,
         parentPhone: r.parentPhone,
@@ -376,7 +386,7 @@ export const SmartStudentExcelImporter: React.FC<SmartStudentExcelImporterProps>
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                Tự động nhận diện cột thông minh, kiểm tra trùng lặp và đối chiếu dữ liệu
+                Mẫu 8 cột: Mã học sinh, Họ đệm, Tên, Giới tính, Dân tộc, Ngày sinh, Điện thoại phụ huynh, Tên phụ huynh. Để mã và điện thoại ở dạng Văn bản để giữ số 0 đầu.
               </p>
             </div>
           </div>

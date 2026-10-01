@@ -64,6 +64,7 @@ export interface Student {
   fullName: string;
   dateOfBirth?: string; // YYYY-MM-DD
   gender?: 'Nam' | 'Nữ';
+  ethnicity?: string;
   status: StudentStatus;
   teacherId: string;
   classId: string;
