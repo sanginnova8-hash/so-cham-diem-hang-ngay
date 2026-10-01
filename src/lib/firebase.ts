@@ -8,10 +8,11 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   updateProfile,
-  signInAnonymously,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import {
   getFirestore,
+  initializeFirestore,
   doc,
   getDocFromServer,
   Firestore,
@@ -20,7 +21,7 @@ import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-export const db: Firestore = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db: Firestore = initializeFirestore(app, { ignoreUndefinedProperties: true }, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
@@ -109,12 +110,28 @@ export async function logoutUser(): Promise<void> {
 }
 
 export async function ensureFirebaseAuth(): Promise<User | null> {
-  if (auth.currentUser) return auth.currentUser;
-  try {
-    const cred = await signInAnonymously(auth);
-    return cred.user;
-  } catch (err) {
-    console.warn('Silent auth note:', err);
-    return null;
+  await auth.authStateReady();
+  if (!auth.currentUser || auth.currentUser.isAnonymous) {
+    throw new Error('Vui lòng đăng nhập bằng Google hoặc email và mật khẩu.');
   }
+  return auth.currentUser;
+}
+
+// A separate Auth instance preserves the administrator/teacher's signed-in session.
+export async function createManagedAuthUser(email: string, password: string, name: string): Promise<string> {
+  await ensureFirebaseAuth();
+  const secondaryApp = getApps().find((candidate) => candidate.name === 'account-provisioning')
+    || initializeApp(firebaseConfig, 'account-provisioning');
+  const secondaryAuth = getAuth(secondaryApp);
+  const credential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+  try {
+    await updateProfile(credential.user, { displayName: name });
+    return credential.user.uid;
+  } finally {
+    await signOut(secondaryAuth);
+  }
+}
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  await sendPasswordResetEmail(auth, email);
 }

@@ -480,7 +480,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onNavig
 
                           <div className="flex flex-col gap-1.5 pt-1">
                             <a
-                              href="https://console.firebase.google.com/project/core-grid-bsmzh/authentication/settings"
+                              href="https://console.firebase.google.com/project/qsangtnl-4226a/authentication/settings"
                               target="_blank"
                               rel="noreferrer"
                               className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[11px] font-bold shadow-xs transition"
@@ -489,34 +489,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onNavig
                               <span>Mở Firebase Console để thêm tên miền (1 phút)</span>
                             </a>
 
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400 text-center font-medium my-1">
-                              — hoặc bấm đăng nhập nhanh bằng tài khoản nội bộ: —
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setLoginEmail('Sanginnova');
-                                  setLoginPassword('Baotran2010');
-                                  setLoginError(null);
-                                }}
-                                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-xl transition text-center cursor-pointer shadow-xs"
-                              >
-                                Thầy Sang (Admin)
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setLoginEmail('lt_10a8');
-                                  setLoginPassword('123456');
-                                  setLoginError(null);
-                                }}
-                                className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-xl transition text-center cursor-pointer shadow-xs"
-                              >
-                                Lớp trưởng (10A8)
-                              </button>
-                            </div>
                           </div>
                         </div>
                       )}
@@ -576,7 +548,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onNavig
                           <span>Em là Lớp trưởng chấm điểm nề nếp?</span>
                         </div>
                         <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                          Đăng nhập bằng Tên đăng nhập & Mật khẩu do Thầy/Cô chủ nhiệm cấp (vd: <span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold">lt_10a8</span> / <span className="font-mono text-rose-600 dark:text-rose-400 font-bold">123456</span>).
+                          Đăng nhập bằng email và mật khẩu do Thầy/Cô chủ nhiệm cấp.
                         </p>
                       </div>
                     </div>

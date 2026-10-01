@@ -45,10 +45,10 @@ export const CreateClassMonitorModal: React.FC<CreateClassMonitorModalProps> = (
     existingMonitor?.displayName || classConfig.classPresident || ''
   );
   const [username, setUsername] = useState<string>(
-    existingMonitor?.username || `lt_${classConfig.className.toLowerCase().replace(/[^a-z0-9]/g, '')}`
+    existingMonitor?.email || ''
   );
   const [password, setPassword] = useState<string>(
-    existingMonitor?.password || '123456'
+    ''
   );
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [phone, setPhone] = useState<string>(
@@ -79,8 +79,8 @@ export const CreateClassMonitorModal: React.FC<CreateClassMonitorModalProps> = (
       if (existingMonitor) {
         setSelectedStudentId(existingMonitor.studentId || '');
         setFullName(existingMonitor.displayName);
-        setUsername(existingMonitor.username || '');
-        setPassword(existingMonitor.password || '123456');
+        setUsername(existingMonitor.email || '');
+        setPassword('');
         setPhone(existingMonitor.phone || '');
         setCanAddViolations(existingMonitor.permissions?.canAddViolations ?? true);
         setCanAddBonuses(existingMonitor.permissions?.canAddBonuses ?? true);
@@ -103,8 +103,8 @@ export const CreateClassMonitorModal: React.FC<CreateClassMonitorModalProps> = (
           setPhone(students[0].parentPhone || '');
         }
         const defaultUser = `lt_${classConfig.className.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-        setUsername(defaultUser);
-        setPassword('123456');
+        setUsername('');
+        setPassword('');
       }
     }
   }, [isOpen, existingMonitor, classConfig, students]);
@@ -135,12 +135,12 @@ export const CreateClassMonitorModal: React.FC<CreateClassMonitorModalProps> = (
       setErrorMessage('Vui lòng nhập họ và tên của Lớp trưởng');
       return;
     }
-    if (!username.trim()) {
-      setErrorMessage('Vui lòng nhập tên đăng nhập cho Lớp trưởng');
+    if (!username.trim().includes('@')) {
+      setErrorMessage('Vui lòng nhập email thực của Lớp trưởng');
       return;
     }
-    if (!password.trim() || password.length < 3) {
-      setErrorMessage('Mật khẩu phải có tối thiểu 3 ký tự');
+    if (!existingMonitor && (!password.trim() || password.length < 6)) {
+      setErrorMessage('Mật khẩu phải có tối thiểu 6 ký tự');
       return;
     }
 
@@ -161,7 +161,7 @@ export const CreateClassMonitorModal: React.FC<CreateClassMonitorModalProps> = (
         },
       });
 
-      setCreatedResult(acc);
+      setCreatedResult({ ...acc, password: existingMonitor ? 'Mật khẩu hiện tại được giữ nguyên' : password.trim() });
       if (onSuccess) onSuccess(acc);
     } catch (err: any) {
       setErrorMessage(err?.message || 'Lỗi khi tạo tài khoản Lớp trưởng');
@@ -180,7 +180,7 @@ Thầy/Cô ${classConfig.homeroomTeacher || 'GVCN'} gửi em thông tin tài kho
 ${window.location.origin}
 
 2. THÔNG TIN ĐĂNG NHẬP:
-• Tên đăng nhập: ${createdResult.username}
+• Tên đăng nhập: ${createdResult.email}
 • Mật khẩu: ${createdResult.password}
 • Vai trò: Lớp trưởng chấm điểm nề nếp
 • Phạm vi: Lớp ${classConfig.className}
@@ -384,14 +384,14 @@ ${canAddViolations ? '✓ Ghi nhận vi phạm nề nếp hàng ngày\n' : ''}${
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                      Tên đăng nhập (Username) <span className="text-rose-500">*</span>
+                      Email đăng nhập <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       required
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      placeholder="vd: lt_10a8"
+                      placeholder="loptruong@gmail.com"
                       className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-mono focus:ring-2 focus:ring-blue-500 outline-none text-blue-600 font-bold"
                     />
                   </div>

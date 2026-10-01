@@ -80,7 +80,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
   const [newTeacherForm, setNewTeacherForm] = useState({
     displayName: '',
     email: '',
-    password: '123456',
+    password: '',
     role: 'teacher' as UserRole,
     assignedClassId: '10A8',
     assignedClassName: 'Lớp 10A8 (Điện CN)',
@@ -111,8 +111,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
       : '9.2';
   const topRate = totalStudents > 0 ? Math.round((totalTopRank / totalStudents) * 100) : 85;
 
-  const handleResetPassword = (acc: UserAccount) => {
-    const res = resetUserPassword(acc.uid);
+  const handleResetPassword = async (acc: UserAccount) => {
+    let res;
+    try { res = await resetUserPassword(acc.uid); } catch (error: any) { alert(error.message); return; }
     setResetModalInfo({
       open: true,
       userName: acc.displayName,
@@ -120,18 +121,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
     });
   };
 
-  const handleCreateTeacher = (e: React.FormEvent) => {
+  const handleCreateTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTeacherForm.displayName || !newTeacherForm.email) {
       alert('Vui lòng nhập đầy đủ họ tên và email giáo viên');
       return;
     }
-    addUserAccount(newTeacherForm);
+    try { await addUserAccount(newTeacherForm); } catch (error: any) { alert(error.message); return; }
     setIsAddTeacherModalOpen(false);
     setNewTeacherForm({
       displayName: '',
       email: '',
-      password: '123456',
+      password: '',
       role: 'teacher',
       assignedClassId: '10A8',
       assignedClassName: 'Lớp 10A8 (Điện CN)',
@@ -649,7 +650,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                     <td className="py-3 px-3 font-mono text-xs">
                       <div className="text-slate-800 dark:text-slate-200 font-medium">{acc.email}</div>
                       <div className="text-[10px] text-slate-400 font-sans mt-0.5">
-                        Mật khẩu: <span className="font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1 py-0.5 rounded border border-amber-200 dark:border-amber-800/60">{acc.password || '123456'}</span>
+                        Mật khẩu: <span className="font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1 py-0.5 rounded border border-amber-200 dark:border-amber-800/60">{'Được quản lý bởi Firebase Authentication'}</span>
                       </div>
                     </td>
                     <td className="py-3 px-3 text-slate-600 dark:text-slate-300">
@@ -821,7 +822,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                 Cấp Lại Mật Khẩu Thành Công!
               </h4>
               <p className="text-xs text-slate-500">
-                Mật khẩu tạm thời cho thầy/cô <strong>{resetModalInfo.userName}</strong>:
+                Đặt lại mật khẩu cho thầy/cô <strong>{resetModalInfo.userName}</strong>:
               </p>
             </div>
 
@@ -832,7 +833,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
             </div>
 
             <p className="text-[11px] text-slate-400 text-center">
-              Vui lòng gửi mã này cho giáo viên để đăng nhập lại và đổi mật khẩu mới.
+              Giáo viên mở email và làm theo hướng dẫn để đặt mật khẩu mới.
             </p>
 
             <button
@@ -840,7 +841,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
               onClick={() => setResetModalInfo({ open: false, userName: '', tempPass: '' })}
               className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition"
             >
-              Đã sao chép & Đóng
+              Đóng
             </button>
           </div>
         </div>
@@ -890,7 +891,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                 </label>
                 <input
                   type="text"
-                  placeholder="Mặc định: 123456"
+                  placeholder="Nhập mật khẩu ít nhất 6 ký tự"
                   value={newTeacherForm.password}
                   onChange={(e) => setNewTeacherForm({ ...newTeacherForm, password: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-xs"

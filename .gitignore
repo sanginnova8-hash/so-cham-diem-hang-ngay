@@ -6,3 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+.publish/
+dev-dist/
+.tools/
+.firebase/
+*-debug.log
+firebase-credentials*.json
+gha-creds-*.json

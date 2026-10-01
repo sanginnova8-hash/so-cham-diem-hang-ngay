@@ -10,6 +10,7 @@ export interface UserAccount {
   uid: string;
   email: string;
   username?: string;
+  teacherId?: string; // Immutable owner of a monitor account's data scope.
   displayName: string;
   role: UserRole;
   assignedClassId: string;
@@ -134,6 +135,7 @@ export interface DisciplineLog {
   createdAt: string;
   updatedAt: string;
   history?: EditHistoryEntry[];
+  createdBy?: string;
 }
 
 export interface SchoolWeek {

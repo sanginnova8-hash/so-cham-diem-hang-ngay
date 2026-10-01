@@ -9,7 +9,7 @@ import {
   where,
   serverTimestamp,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import {
   UserAccount,
   SchoolClass,
@@ -37,12 +37,15 @@ export async function saveUserToCloud(user: UserAccount): Promise<void> {
         assignedClassName: user.assignedClassName,
         department: user.department || '',
         phone: user.phone || '',
-        password: user.password || '',
+        teacherId: user.teacherId || '',
+        permissions: user.permissions || { canAddViolations: false, canAddBonuses: false, canViewScores: false },
+        studentId: user.studentId || '',
+        avatarUrl: user.avatarUrl || '',
         isActive: user.isActive,
         lastLoginAt: user.lastLoginAt || new Date().toISOString(),
         updatedAt: serverTimestamp(),
       },
-      { merge: true }
+      { merge: false }
     );
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -58,19 +61,24 @@ export async function getUserFromCloud(uid: string): Promise<UserAccount | null>
     }
     return null;
   } catch (error) {
-    console.warn(`Could not fetch user ${uid} from cloud:`, error);
-    return null;
+    throw error;
   }
 }
 
 export async function getAllUsersFromCloud(): Promise<UserAccount[]> {
   const path = 'users';
   try {
-    const snap = await getDocs(collection(db, 'users'));
+    if (!auth.currentUser || auth.currentUser.isAnonymous) return [];
+    const own = await getUserFromCloud(auth.currentUser.uid);
+    if (!own) return [];
+    if (own.role === 'monitor') return [own];
+    const source = ['admin', 'owner'].includes(own.role) ? collection(db, 'users')
+      : query(collection(db, 'users'), where('teacherId', '==', own.uid), where('role', '==', 'monitor'));
+    const snap = await getDocs(source);
+    if (!['admin', 'owner'].includes(own.role)) return [own, ...snap.docs.map((d) => d.data() as UserAccount)];
     return snap.docs.map((d) => d.data() as UserAccount);
   } catch (error) {
-    console.warn('Could not fetch all users from cloud:', error);
-    return [];
+    throw error;
   }
 }
 
@@ -95,11 +103,15 @@ export async function saveClassToCloud(cls: SchoolClass): Promise<void> {
 export async function getAllClassesFromCloud(): Promise<SchoolClass[]> {
   const path = 'classes';
   try {
-    const snap = await getDocs(collection(db, 'classes'));
+    if (!auth.currentUser || auth.currentUser.isAnonymous) return [];
+    const own = await getUserFromCloud(auth.currentUser.uid);
+    if (!own) return [];
+    const source = ['admin', 'owner'].includes(own.role) ? collection(db, 'classes')
+      : query(collection(db, 'classes'), where('teacherId', '==', own.role === 'monitor' ? own.teacherId : own.uid));
+    const snap = await getDocs(source);
     return snap.docs.map((d) => d.data() as SchoolClass);
   } catch (error) {
-    console.warn('Could not fetch classes from cloud:', error);
-    return [];
+    throw error;
   }
 }
 
@@ -139,8 +151,7 @@ export async function getClassConfigFromCloud(teacherId: string): Promise<ClassC
     }
     return null;
   } catch (error) {
-    console.warn('Could not fetch class config from cloud:', error);
-    return null;
+    throw error;
   }
 }
 
@@ -185,8 +196,7 @@ export async function getStudentsFromCloud(teacherId: string): Promise<Student[]
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as Student);
   } catch (error) {
-    console.warn(`Could not fetch students for teacher ${teacherId}:`, error);
-    return [];
+    throw error;
   }
 }
 
@@ -223,8 +233,7 @@ export async function getDisciplineLogsFromCloud(teacherId: string): Promise<Dis
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as DisciplineLog);
   } catch (error) {
-    console.warn(`Could not fetch discipline logs for teacher ${teacherId}:`, error);
-    return [];
+    throw error;
   }
 }
 
@@ -252,8 +261,7 @@ export async function getBehaviorCategoriesFromCloud(teacherId: string): Promise
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as BehaviorCategory);
   } catch (error) {
-    console.warn(`Could not fetch categories for teacher ${teacherId}:`, error);
-    return [];
+    throw error;
   }
 }
 
@@ -277,7 +285,7 @@ export async function savePeriodLockToCloud(lock: PeriodLockStatus): Promise<voi
       { merge: true }
     );
   } catch (error) {
-    console.warn(`Could not save lock ${id} to cloud:`, error);
+    throw error;
   }
 }
 
@@ -297,7 +305,6 @@ export async function getPeriodLocksFromCloud(): Promise<PeriodLockStatus[]> {
       } as PeriodLockStatus;
     });
   } catch (error) {
-    console.warn('Could not fetch period locks from cloud:', error);
-    return [];
+    throw error;
   }
 }

@@ -1,149 +1,97 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper to check if client has an active Firebase auth session
-    function isSignedIn() {
-      return request.auth != null;
+    function signedIn() {
+      return request.auth != null && request.auth.token.firebase.sign_in_provider != 'anonymous';
     }
-
-    // Fetch user profile from Firestore if it exists
-    function getUserData() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data
-        : null;
+    function profile() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function active() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && profile().isActive == true;
     }
-
-    // Check if the current user has the 'monitor' (Lớp trưởng) role
-    function isMonitor() {
-      return getUserData() != null && getUserData().role == 'monitor';
+    function admin() { return active() && profile().role in ['admin', 'owner']; }
+    function teacher() { return active() && profile().role == 'teacher'; }
+    function ownData(data) { return active() && data.teacherId == request.auth.uid && profile().role != 'monitor'; }
+    function monitorData(data) { return active() && profile().role == 'monitor' && data.teacherId == profile().teacherId; }
+    function readable(data) { return admin() || ownData(data) || monitorData(data); }
+    function writable(data) { return admin() || ownData(data); }
+    function stableOwner() { return request.resource.data.teacherId == resource.data.teacherId; }
+    function managesMonitor(data) { return teacher() && data.role == 'monitor' && data.teacherId == request.auth.uid; }
+    function validProfile(uid) {
+      return request.resource.data.uid == uid && request.resource.data.role in ['teacher', 'monitor', 'admin', 'owner']
+        && request.resource.data.isActive is bool && !request.resource.data.keys().hasAny(['password']);
     }
-
-    // =========================================================================
-    // 1. USERS & USER PROFILES
-    // =========================================================================
-    match /users/{userId} {
-      allow read, write: if isSignedIn();
+    function unlocked(type, value) {
+      let id = type + '_' + string(value);
+      return !exists(/databases/$(database)/documents/periodLocks/$(id))
+        || get(/databases/$(database)/documents/periodLocks/$(id)).data.isLocked != true;
     }
-
-    // =========================================================================
-    // 2. SCHOOL & MULTI-YEAR ACADEMIC HIERARCHY
-    // =========================================================================
-    match /schools/{schoolId} {
-      allow read: if true;
-      allow write: if isSignedIn() && !isMonitor();
+    function validLog() {
+      let log = request.resource.data;
+      return log.type in ['deduct', 'bonus'] && log.count is number && log.count > 0
+        && log.month is int && log.month >= 1 && log.month <= 12
+        && log.weekNumber is int && log.weekNumber >= 1 && log.weekNumber <= 53
+        && log.scorePerUnit is number && log.scorePerUnit >= 0
+        && get(/databases/$(database)/documents/students/$(log.studentId)).data.teacherId == log.teacherId
+        && get(/databases/$(database)/documents/students/$(log.studentId)).data.classId == log.classId
+        && get(/databases/$(database)/documents/classConfigs/$(log.classId)).data.teacherId == log.teacherId;
     }
-
-    match /academicYears/{yearId} {
-      allow read: if true;
-      allow write: if isSignedIn() && !isMonitor();
+    function semesterOpen(data) {
+      let config = get(/databases/$(database)/documents/classConfigs/$(data.classId)).data;
+      return config.semester1Months.hasAny([data.month]) ? unlocked('semester', 1) : unlocked('semester', 2);
     }
-
-    match /semesters/{semesterId} {
-      allow read: if true;
-      allow write: if isSignedIn() && !isMonitor();
+    function logOpen() { return unlocked('week', request.resource.data.weekNumber) && unlocked('month', request.resource.data.month) && semesterOpen(request.resource.data); }
+    function monitorCanRecord(data) {
+      return monitorData(data) && ((data.type == 'deduct' && profile().permissions.canAddViolations == true)
+        || (data.type == 'bonus' && profile().permissions.canAddBonuses == true));
     }
-
-    // =========================================================================
-    // 3. CLASSES
-    // =========================================================================
-    match /classes/{classId} {
-      allow read: if true;
-      allow write: if isSignedIn() && !isMonitor();
+    match /users/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || admin() || managesMonitor(resource.data));
+      allow list: if admin() || managesMonitor(resource.data);
+      allow create: if signedIn() && validProfile(uid) && (admin()
+        || (request.auth.uid == uid && request.resource.data.role == 'teacher'
+          && request.resource.data.isActive == true && request.resource.data.teacherId == '')
+        || (managesMonitor(request.resource.data)
+          && get(/databases/$(database)/documents/classes/$(request.resource.data.assignedClassId)).data.teacherId == request.auth.uid));
+      allow update: if active() && validProfile(uid) && (admin()
+        || (request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['displayName', 'phone', 'avatarUrl', 'lastLoginAt', 'updatedAt']))
+        || (managesMonitor(resource.data) && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['displayName', 'phone', 'permissions', 'isActive', 'updatedAt', 'lastLoginAt'])));
+      allow delete: if admin() || managesMonitor(resource.data);
     }
-
-    // =========================================================================
-    // 4. STUDENTS & ENROLLMENTS
-    // =========================================================================
-    match /students/{studentId} {
-      allow read: if isSignedIn();
-      // Teacher / School can create, update, delete students. Monitor CANNOT!
-      allow write: if isSignedIn() && !isMonitor();
+    match /classes/{id} {
+      allow read: if readable(resource.data);
+      allow create: if writable(request.resource.data);
+      allow update: if writable(resource.data) && stableOwner();
+      allow delete: if writable(resource.data);
     }
-
-    match /enrollments/{enrollmentId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && !isMonitor();
+    match /{collection}/{id} {
+      allow read: if collection in ['students', 'classConfigs', 'behaviorCategories', 'weeklySnapshots', 'monthlySummaries', 'semesterSummaries', 'parentReports'] && readable(resource.data);
+      allow create: if collection in ['students', 'classConfigs', 'behaviorCategories', 'weeklySnapshots', 'monthlySummaries', 'semesterSummaries', 'parentReports'] && writable(request.resource.data);
+      allow update: if collection in ['students', 'classConfigs', 'behaviorCategories', 'weeklySnapshots', 'monthlySummaries', 'semesterSummaries', 'parentReports'] && writable(resource.data) && stableOwner();
+      allow delete: if collection in ['students', 'classConfigs', 'behaviorCategories', 'weeklySnapshots', 'monthlySummaries', 'semesterSummaries', 'parentReports'] && writable(resource.data);
     }
-
-    // =========================================================================
-    // 5. BEHAVIOR CATEGORIES & REGULATIONS
-    // =========================================================================
-    match /behaviorCategories/{categoryId} {
-      allow read: if true;
-      allow write: if isSignedIn() && !isMonitor();
+    match /disciplineLogs/{id} {
+      allow read: if admin() || ownData(resource.data) || (monitorData(resource.data) && profile().permissions.canViewScores == true);
+      allow create: if validLog() && logOpen() && request.resource.data.createdBy == request.auth.uid
+        && (writable(request.resource.data) || monitorCanRecord(request.resource.data));
+      allow update: if validLog() && logOpen() && unlocked('week', resource.data.weekNumber)
+        && unlocked('month', resource.data.month) && semesterOpen(resource.data) && stableOwner()
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.classId == resource.data.classId
+        && request.resource.data.get('createdBy', '') == resource.data.get('createdBy', '')
+        && (writable(resource.data) || (monitorCanRecord(request.resource.data) && resource.data.createdBy == request.auth.uid));
+      allow delete: if writable(resource.data) && unlocked('week', resource.data.weekNumber) && unlocked('month', resource.data.month) && semesterOpen(resource.data);
     }
-
-    // =========================================================================
-    // 6. DISCIPLINE LOGS (Core logging: Both Teacher and Monitor record instantly!)
-    // =========================================================================
-    match /disciplineLogs/{logId} {
-      allow read: if isSignedIn();
-      // Teacher, Admin, Monitor can create discipline logs immediately
-      allow create: if isSignedIn();
-      // Teacher can update any. Monitor can only update if authorized
-      allow update: if isSignedIn();
-      // Teacher can delete. Monitor CANNOT delete discipline logs!
-      allow delete: if isSignedIn() && !isMonitor();
-    }
-
-    // =========================================================================
-    // 7. SNAPSHOTS & SUMMARIES
-    // =========================================================================
-    match /weeklySnapshots/{snapshotId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && !isMonitor();
-    }
-
-    match /monthlySummaries/{summaryId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && !isMonitor();
-    }
-
-    match /semesterSummaries/{summaryId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && !isMonitor();
-    }
-
-    // =========================================================================
-    // 8. CLASS CONFIGS (HOMEROOM SETTINGS)
-    // =========================================================================
-    match /classConfigs/{configId} {
-      allow read: if true;
-      allow write: if isSignedIn() && !isMonitor();
-    }
-
-    // =========================================================================
-    // 9. PERIOD LOCKS
-    // =========================================================================
-    match /periodLocks/{lockId} {
-      allow read: if true;
-      allow write: if isSignedIn() && !isMonitor();
-    }
-
-    // =========================================================================
-    // 10. AUDIT LOGS
-    // =========================================================================
-    match /auditLogs/{logId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
+    match /periodLocks/{id} { allow read: if active(); allow write: if admin(); }
+    match /auditLogs/{id} {
+      allow read: if admin();
+      allow create: if active() && request.resource.data.actorId == request.auth.uid;
       allow update, delete: if false;
     }
-
-    // =========================================================================
-    // 11. SYSTEM CONFIGURATIONS
-    // =========================================================================
-    match /systemConfigs/{configId} {
-      allow read: if true;
-      allow write: if isSignedIn() && !isMonitor();
-    }
-
-    // =========================================================================
-    // 12. PARENT REPORTS
-    // =========================================================================
-    match /parentReports/{reportId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && !isMonitor();
+    // V2 hierarchy is restricted to administrators until its dedicated migration.
+    match /{collection}/{id} {
+      allow read, write: if collection in ['schools', 'academicYears', 'semesters', 'enrollments', 'systemConfigs'] && admin();
     }
   }
 }

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef, ReactNode } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import {
   collection,
@@ -9,6 +9,7 @@ import {
   writeBatch,
   query,
   where,
+  onSnapshot,
 } from 'firebase/firestore';
 import {
   Student,
@@ -34,8 +35,9 @@ import {
   logoutUser,
   handleFirestoreError,
   OperationType,
-  testFirestoreConnection,
   ensureFirebaseAuth,
+  createManagedAuthUser,
+  requestPasswordReset,
 } from '../lib/firebase';
 import {
   saveUserToCloud,
@@ -43,7 +45,6 @@ import {
   getAllUsersFromCloud,
   saveClassToCloud,
   getAllClassesFromCloud,
-  deleteClassFromCloud,
   saveClassConfigToCloud,
   getClassConfigFromCloud,
   saveStudentToCloud,
@@ -65,11 +66,7 @@ import {
   DEFAULT_ACHIEVEMENT_RULES,
   INITIAL_TEACHER_ID,
 } from '../data/initialData';
-import {
-  INITIAL_USER_ACCOUNTS,
-  INITIAL_SCHOOL_CLASSES,
-  INITIAL_LOCKED_PERIODS,
-} from '../data/rbacAccounts';
+import { scopeBackup } from '../lib/scopedBackup';
 import { calculateRank, clampScore } from '../lib/utils';
 
 interface AppContextType {
@@ -117,10 +114,10 @@ interface AppContextType {
   switchWorkingClass: (classItem: SchoolClass) => void;
   toggleLockPeriod: (periodType: 'week' | 'month' | 'semester', periodValue: number, reason?: string) => void;
   updateUserAccount: (uid: string, updates: Partial<UserAccount>) => void;
-  resetUserPassword: (uid: string) => { success: boolean; tempPass: string };
+  resetUserPassword: (uid: string) => Promise<{ success: boolean; tempPass: string }>;
   toggleUserAccountStatus: (uid: string) => void;
   deleteUserAccount: (uid: string) => void;
-  addUserAccount: (acc: Omit<UserAccount, 'uid' | 'lastLoginAt'>) => UserAccount;
+  addUserAccount: (acc: Omit<UserAccount, 'uid' | 'lastLoginAt'>) => Promise<UserAccount>;
   createClassMonitorAccount: (params: {
     studentId?: string;
     fullName: string;
@@ -213,117 +210,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
 
   // Core collections in memory
-  const [classConfig, setClassConfig] = useState<ClassConfig>(INITIAL_CLASS_CONFIG);
-  const [students, setStudents] = useState<Student[]>(INITIAL_STUDENTS);
-  const [behaviorCategories, setBehaviorCategories] = useState<BehaviorCategory[]>(INITIAL_BEHAVIOR_CATEGORIES);
-  const [disciplineLogs, setDisciplineLogs] = useState<DisciplineLog[]>(INITIAL_DISCIPLINE_LOGS);
+  const [classConfig, setClassConfig] = useState<ClassConfig>({ ...INITIAL_CLASS_CONFIG, id: '', teacherId: '', className: '', homeroomTeacher: '', teacherEmail: '', teacherPhone: '' });
+  const [students, setStudents] = useState<Student[]>([]);
+  const [behaviorCategories, setBehaviorCategories] = useState<BehaviorCategory[]>([]);
+  const [disciplineLogs, setDisciplineLogs] = useState<DisciplineLog[]>([]);
 
-  // RBAC state
-  const [userAccounts, setUserAccounts] = useState<UserAccount[]>(() => {
-    try {
-      const savedAccs = localStorage.getItem('so_cham_diem_user_accounts');
-      if (savedAccs) return JSON.parse(savedAccs);
-    } catch (e) {
-      console.warn('Error reading user accounts:', e);
-    }
-    return INITIAL_USER_ACCOUNTS;
-  });
-
-  const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>(() => {
-    try {
-      const savedClasses = localStorage.getItem('so_cham_diem_school_classes');
-      if (savedClasses) return JSON.parse(savedClasses);
-    } catch (e) {
-      console.warn('Error reading school classes:', e);
-    }
-    return INITIAL_SCHOOL_CLASSES;
-  });
-
-  const [lockedPeriods, setLockedPeriods] = useState<PeriodLockStatus[]>(() => {
-    try {
-      const savedLocked = localStorage.getItem('so_cham_diem_locked_periods');
-      if (savedLocked) return JSON.parse(savedLocked);
-    } catch (e) {
-      console.warn('Error reading locked periods:', e);
-    }
-    return INITIAL_LOCKED_PERIODS;
-  });
-
-  const [userRole, setUserRole] = useState<UserRole>(() => {
-    try {
-      const savedRole = localStorage.getItem('so_cham_diem_user_role') as UserRole;
-      if (savedRole && ['guest', 'teacher', 'admin'].includes(savedRole)) return savedRole;
-    } catch (e) {
-      // fallback
-    }
-    return 'guest'; // default to guest so no admin information is exposed before login
-  });
-
-  const [activeAccount, setActiveAccount] = useState<UserAccount | null>(() => {
-    try {
-      const savedUid = localStorage.getItem('so_cham_diem_active_uid');
-      if (savedUid) {
-        const found = INITIAL_USER_ACCOUNTS.find((a) => a.uid === savedUid);
-        if (found) return found;
-      }
-    } catch (e) {
-      // fallback
-    }
-    return null; // Not logged in by default
-  });
-
+  // Cloud profiles, never cached roles or passwords, determine access.
+  const [userAccounts, setUserAccounts] = useState<UserAccount[]>([]);
+  const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>([]);
+  const [lockedPeriods, setLockedPeriods] = useState<PeriodLockStatus[]>([]);
+  const [userRole, setUserRole] = useState<UserRole>('guest');
+  const [activeAccount, setActiveAccount] = useState<UserAccount | null>(null);
   const [inspectorModeClass, setInspectorModeClass] = useState<SchoolClass | null>(null);
-
-  // Save RBAC state changes to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('so_cham_diem_user_accounts', JSON.stringify(userAccounts));
-      localStorage.setItem('so_cham_diem_locked_periods', JSON.stringify(lockedPeriods));
-      localStorage.setItem('so_cham_diem_user_role', userRole);
-      if (activeAccount) {
-        localStorage.setItem('so_cham_diem_active_uid', activeAccount.uid);
-      } else {
-        localStorage.removeItem('so_cham_diem_active_uid');
-      }
-    } catch (e) {
-      console.warn('Error saving RBAC state:', e);
-    }
-  }, [userAccounts, lockedPeriods, userRole, activeAccount]);
-
-  const isPeriodLocked = (periodType: 'week' | 'month' | 'semester', periodValue: number): boolean => {
-    return lockedPeriods.some(
-      (p) => p.periodType === periodType && p.periodValue === periodValue && p.isLocked
-    );
+  const loadVersion = useRef(0);
+  const clearSessionData = () => {
+    loadVersion.current++;
+    setActiveAccount(null); setUserRole('guest');
+    setUserAccounts([]); setSchoolClasses([]); setLockedPeriods([]);
+    setStudents([]); setDisciplineLogs([]); setBehaviorCategories([]);
+    setClassConfig({ ...INITIAL_CLASS_CONFIG, id: '', teacherId: '', className: '', homeroomTeacher: '', teacherEmail: '', teacherPhone: '' });
+    setInspectorModeClass(null);
   };
-
   const loginAsRole = (role: UserRole, accountUid?: string) => {
-    if (role === 'guest') {
-      setUserRole('guest');
-      setActiveAccount(null);
-      setInspectorModeClass(null);
-      return;
-    }
-    const targetAcc = accountUid
-      ? userAccounts.find((a) => a.uid === accountUid)
-      : userAccounts.find((a) => a.role === role);
-
-    if (targetAcc) {
-      setActiveAccount(targetAcc);
-      setUserRole(targetAcc.role);
-      setInspectorModeClass(null);
-    } else {
-      setUserRole(role);
+    if (role === 'guest') { void logout(); return; }
+    if (accountUid !== auth.currentUser?.uid || role !== activeAccount?.role) {
+      alert('Vui lòng đăng xuất và đăng nhập bằng tài khoản cần sử dụng.');
     }
   };
-
-  const switchAccount = (accountUid: string) => {
-    const acc = userAccounts.find((a) => a.uid === accountUid);
-    if (acc) {
-      setActiveAccount(acc);
-      setUserRole(acc.role);
-      setInspectorModeClass(null);
-    }
+  const switchAccount = (_accountUid: string) => {
+    alert('Vui lòng đăng xuất và đăng nhập bằng tài khoản cần sử dụng.');
   };
+  const isPeriodLocked = (periodType: 'week' | 'month' | 'semester', periodValue: number): boolean =>
+    lockedPeriods.some((period) => period.periodType === periodType && period.periodValue === periodValue && period.isLocked);
 
   const enterInspectorMode = (classItem: SchoolClass) => {
     // Teachers are strictly restricted to their own homeroom class
@@ -331,6 +249,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       console.warn('Giáo viên không có quyền thanh tra lớp học khác');
       return;
     }
+    setStudents([]); setDisciplineLogs([]); setBehaviorCategories([]);
     setInspectorModeClass(classItem);
   };
 
@@ -339,109 +258,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const switchWorkingClass = (classItem: SchoolClass) => {
-    // Teachers are strictly restricted to their own homeroom class
-    if (userRole === 'teacher') {
-      console.warn('Giáo viên không có quyền chuyển sang xem hoặc chỉnh sửa lớp không chủ nhiệm');
-      return;
-    }
-    setClassConfig((prev) => ({
-      ...prev,
-      className: classItem.className.replace(/^lớp\s+/i, '').trim(),
-      homeroomTeacher: classItem.teacherName,
-      department: classItem.department,
-      schoolYear: classItem.schoolYear,
-    }));
-    setInspectorModeClass(null);
+    if (!['admin', 'owner'].includes(userRole)) return;
+    enterInspectorMode(classItem);
   };
 
-  const toggleLockPeriod = (periodType: 'week' | 'month' | 'semester', periodValue: number, reason?: string) => {
-    setLockedPeriods((prev) => {
-      const idx = prev.findIndex((p) => p.periodType === periodType && p.periodValue === periodValue);
-      let targetLock: PeriodLockStatus;
-      let next: PeriodLockStatus[];
-      if (idx >= 0) {
-        next = [...prev];
-        targetLock = {
-          ...next[idx],
-          isLocked: !next[idx].isLocked,
-          lockedAt: !next[idx].isLocked ? new Date().toISOString() : undefined,
-          lockedBy: !next[idx].isLocked ? (activeAccount?.displayName || 'Ban Giám Hiệu') : undefined,
-          reason: reason || next[idx].reason,
-        };
-        next[idx] = targetLock;
-      } else {
-        targetLock = {
-          periodType,
-          periodValue,
-          isLocked: true,
-          lockedAt: new Date().toISOString(),
-          lockedBy: activeAccount?.displayName || 'Ban Giám Hiệu',
-          reason: reason || 'Khóa sổ thi đua định kỳ',
-        };
-        next = [...prev, targetLock];
-      }
-      savePeriodLockToCloud(targetLock).catch((e) => console.warn('Lock period cloud sync note:', e));
-      return next;
-    });
+  const toggleLockPeriod = async (periodType: 'week' | 'month' | 'semester', periodValue: number, reason?: string) => {
+    const old = lockedPeriods.find((item) => item.periodType === periodType && item.periodValue === periodValue);
+    const next: PeriodLockStatus = { ...old, periodType, periodValue, isLocked: !old?.isLocked,
+      lockedAt: new Date().toISOString(), lockedBy: activeAccount?.displayName || '', reason: reason || old?.reason || '' };
+    try {
+      await savePeriodLockToCloud(next);
+      setLockedPeriods((prev) => [...prev.filter((item) => item.periodType !== periodType || item.periodValue !== periodValue), next]);
+    } catch (error: any) { setCloudSyncError(error.message); alert('Không lưu được khóa sổ: ' + error.message); }
   };
 
-  const updateUserAccount = (uid: string, updates: Partial<UserAccount>) => {
-    let updatedTarget: UserAccount | null = null;
-    setUserAccounts((prev) => {
-      const next = prev.map((acc) => {
-        if (acc.uid !== uid) return acc;
-        updatedTarget = { ...acc, ...updates };
-        return updatedTarget;
-      });
-      try {
-        localStorage.setItem('so_cham_diem_user_accounts', JSON.stringify(next));
-      } catch (e) {}
-      return next;
-    });
-    if (updatedTarget) {
-      saveUserToCloud(updatedTarget).catch((e) => console.warn('User cloud update note:', e));
-    }
-    if (activeAccount?.uid === uid) {
-      setActiveAccount((prev) => (prev ? { ...prev, ...updates } : prev));
-    }
+  const updateUserAccount = async (uid: string, updates: Partial<UserAccount>) => {
+    const existing = userAccounts.find((account) => account.uid === uid);
+    if (!existing) throw new Error('Không tìm thấy tài khoản.');
+    const next = { ...existing, ...updates };
+    try {
+      await saveUserToCloud(next);
+      setUserAccounts((prev) => prev.map((account) => account.uid === uid ? next : account));
+      if (activeAccount?.uid === uid) setActiveAccount(next);
+    } catch (error: any) { setCloudSyncError(error.message); alert('Không lưu được tài khoản: ' + error.message); }
   };
 
-  const resetUserPassword = (uid: string): { success: boolean; tempPass: string } => {
-    const tempPass = 'GV' + Math.floor(100000 + Math.random() * 900000);
-    let targetAcc: UserAccount | null = null;
-    setUserAccounts((prev) => {
-      const next = prev.map((acc) => {
-        if (acc.uid !== uid) return acc;
-        targetAcc = { ...acc, password: tempPass };
-        return targetAcc;
-      });
-      try {
-        localStorage.setItem('so_cham_diem_user_accounts', JSON.stringify(next));
-      } catch (e) {}
-      return next;
-    });
-    if (targetAcc) {
-      saveUserToCloud(targetAcc).catch((e) => console.warn('User reset password cloud note:', e));
-    }
-    return { success: true, tempPass };
+  const resetUserPassword = async (uid: string): Promise<{ success: boolean; tempPass: string }> => {
+    const account = userAccounts.find((item) => item.uid === uid);
+    if (!account) throw new Error('Không tìm thấy tài khoản.');
+    await requestPasswordReset(account.email);
+    return { success: true, tempPass: 'Đã gửi email đặt lại mật khẩu.' };
   };
 
   const toggleUserAccountStatus = (uid: string) => {
-    let targetAcc: UserAccount | null = null;
-    setUserAccounts((prev) => {
-      const next = prev.map((acc) => {
-        if (acc.uid !== uid) return acc;
-        targetAcc = { ...acc, isActive: !acc.isActive };
-        return targetAcc;
-      });
-      try {
-        localStorage.setItem('so_cham_diem_user_accounts', JSON.stringify(next));
-      } catch (e) {}
-      return next;
-    });
-    if (targetAcc) {
-      saveUserToCloud(targetAcc).catch((e) => console.warn('User status cloud sync note:', e));
-    }
+    const account = userAccounts.find((item) => item.uid === uid);
+    if (account) void updateUserAccount(uid, { isActive: !account.isActive });
   };
 
   // Helper: Kiểm tra xem một lớp học có gắn liền với bất kỳ tài khoản GVCN nào còn tồn tại hay không
@@ -463,7 +314,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSchoolClasses((prev) => {
       const next = [...prev, cls];
       try {
-        localStorage.setItem('so_cham_diem_school_classes', JSON.stringify(next));
+        // Class directories are loaded from Firestore.
       } catch (e) {}
       return next;
     });
@@ -474,7 +325,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSchoolClasses((prev) => {
       const next = prev.filter((c) => c.id !== classId);
       try {
-        localStorage.setItem('so_cham_diem_school_classes', JSON.stringify(next));
+        // Class directories are loaded from Firestore.
       } catch (e) {}
       return next;
     });
@@ -502,76 +353,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
 
       try {
-        localStorage.setItem('so_cham_diem_school_classes', JSON.stringify(valid));
+        // Class directories are loaded from Firestore.
       } catch (e) {}
       return valid;
     });
     return removedCount;
   };
 
-  const deleteUserAccount = (uid: string) => {
-    const nextUsers = userAccounts.filter((acc) => acc.uid !== uid);
-    setUserAccounts(nextUsers);
+  // Revoke access while preserving account tombstones and class history.
+  const deleteUserAccount = (uid: string) => { void updateUserAccount(uid, { isActive: false }); };
 
-    try {
-      localStorage.setItem('so_cham_diem_user_accounts', JSON.stringify(nextUsers));
-    } catch (e) {
-      console.warn('Storage save note:', e);
-    }
-
-    try {
-      deleteDoc(doc(db, 'users', uid)).catch((err) => {
-        console.warn('Firestore user delete notice:', err);
-      });
-    } catch (e) {
-      console.warn('Error scheduling user delete:', e);
-    }
-
-    // Danh sách lớp phải gắn liền với GVCN: Tự động xóa mọi lớp không còn GVCN nào phụ trách
-    setSchoolClasses((prevClasses) => {
-      const validClasses = prevClasses.filter((cls) => {
-        const stillHasTeacher = isClassTiedToTeacher(cls, nextUsers);
-        if (!stillHasTeacher) {
-          try {
-            deleteDoc(doc(db, 'classes', cls.id)).catch(() => {});
-          } catch (e) {}
-          return false; // Xóa lớp mồ côi này khỏi danh sách lớp!
-        }
-        return true;
-      });
-
-      try {
-        localStorage.setItem('so_cham_diem_school_classes', JSON.stringify(validClasses));
-      } catch (e) {}
-      return validClasses;
-    });
-
-    if (activeAccount?.uid === uid) {
-      loginAsRole('guest');
-    }
-  };
-
-  const addUserAccount = (acc: Omit<UserAccount, 'uid' | 'lastLoginAt'>): UserAccount => {
-    const initialPass = acc.password || '123456';
-    const newAcc: UserAccount = {
-      ...acc,
-      password: initialPass,
-      uid: `user_${Date.now()}`,
-      lastLoginAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
-    };
-    setUserAccounts((prev) => {
-      const next = [...prev, newAcc];
-      try {
-        localStorage.setItem('so_cham_diem_user_accounts', JSON.stringify(next));
-      } catch (e) {}
-      return next;
-    });
-    saveUserToCloud(newAcc).catch((err) => console.warn('Could not save new teacher to cloud:', err));
+  const addUserAccount = async (acc: Omit<UserAccount, 'uid' | 'lastLoginAt'>): Promise<UserAccount> => {
+    if (!['admin', 'owner'].includes(activeAccount?.role || '')) throw new Error('Chỉ quản trị viên được tạo tài khoản giáo viên.');
+    const uid = await createManagedAuthUser(acc.email.trim().toLowerCase(), acc.password || '', acc.displayName);
+    const { password: _password, ...profile } = acc;
+    const classId = `cls_${uid}`;
+    const newAcc: UserAccount = { ...profile, uid, assignedClassId: classId, lastLoginAt: new Date().toISOString() };
+    await saveUserToCloud(newAcc);
+    await saveClassToCloud({ id: classId, className: acc.assignedClassName || 'Lớp chủ nhiệm', teacherId: uid,
+      teacherName: acc.displayName, teacherEmail: acc.email, department: acc.department || '',
+      schoolYear: INITIAL_CLASS_CONFIG.schoolYear, studentCount: 0, averageScore: 0, topRankCount: 0, violationCount: 0 });
+    setUserAccounts((prev) => [...prev.filter((item) => item.uid !== uid), newAcc]);
     return newAcc;
   };
 
   const getClassMonitorAccount = (classId?: string): UserAccount | undefined => {
-    const targetClassId = classId || classConfig.id;
+    const targetClassId = classId || activeAccount?.assignedClassId || classConfig.id;
     return userAccounts.find(
       (a) => a.role === 'monitor' && a.assignedClassId === targetClassId
     );
@@ -589,7 +396,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       canViewScores: boolean;
     };
   }): Promise<UserAccount> => {
-    const classId = classConfig.id;
+    await ensureFirebaseAuth();
+    const classId = activeAccount?.assignedClassId || classConfig.id;
     const className = classConfig.className;
 
     // Check if monitor account for this class already exists
@@ -597,9 +405,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       (a) => a.role === 'monitor' && a.assignedClassId === classId
     );
 
+    if (existingIndex >= 0) {
+      const existing = userAccounts[existingIndex];
+      const next = { ...existing, displayName: params.fullName, phone: params.phone || '', permissions: params.permissions || existing.permissions };
+      await saveUserToCloud(next);
+      setUserAccounts((prev) => prev.map((item) => item.uid === next.uid ? next : item));
+      return next;
+    }
+    if (!params.username.includes('@')) throw new Error('Vui lòng nhập email thực của lớp trưởng.');
+    const email = params.username.trim().toLowerCase();
+    const uid = await createManagedAuthUser(email, params.password || '', params.fullName);
     const newMonitorAccount: UserAccount = {
-      uid: existingIndex >= 0 ? userAccounts[existingIndex].uid : `monitor_${classId}_${Date.now()}`,
-      email: `${params.username.toLowerCase()}@school.local`,
+      uid,
+      teacherId: activeAccount?.uid,
+      email,
       username: params.username,
       displayName: params.fullName,
       role: 'monitor',
@@ -607,7 +426,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       assignedClassName: className,
       department: (activeAccount?.department) || 'Khoa Chuyên Môn',
       phone: params.phone || '',
-      password: params.password || '123456',
       isActive: true,
       lastLoginAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
       studentId: params.studentId,
@@ -618,195 +436,82 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       },
     };
 
-    if (existingIndex >= 0) {
-      setUserAccounts((prev) => {
-        const next = [...prev];
-        next[existingIndex] = newMonitorAccount;
-        return next;
-      });
-    } else {
-      setUserAccounts((prev) => [...prev, newMonitorAccount]);
-    }
-
-    // Also update classConfig's classPresident name
-    if (params.fullName) {
-      await updateClassConfig({ classPresident: params.fullName });
-    }
-
-    try {
-      await saveUserToCloud(newMonitorAccount);
-    } catch (err) {
-      console.warn('Notice saving monitor to cloud:', err);
-    }
+    await saveUserToCloud(newMonitorAccount);
+    setUserAccounts((prev) => [...prev, newMonitorAccount]);
+    if (params.fullName) await updateClassConfig({ classPresident: params.fullName });
 
     return newMonitorAccount;
   };
 
   const toggleMonitorPermission = (uid: string, key: 'canAddViolations' | 'canAddBonuses' | 'canViewScores') => {
-    setUserAccounts((prev) =>
-      prev.map((acc) => {
-        if (acc.uid !== uid) return acc;
-        const currentPerms = acc.permissions || {
-          canAddViolations: true,
-          canAddBonuses: true,
-          canViewScores: true,
-        };
-        const updated = {
-          ...acc,
-          permissions: {
-            ...currentPerms,
-            [key]: !currentPerms[key],
-          },
-        };
-        try {
-          saveUserToCloud(updated);
-        } catch (e) {}
-        return updated;
-      })
-    );
+    const account = userAccounts.find((item) => item.uid === uid);
+    if (!account) return;
+    const permissions = account.permissions || { canAddViolations: false, canAddBonuses: false, canViewScores: false };
+    void updateUserAccount(uid, { permissions: { ...permissions, [key]: !permissions[key] } });
   };
 
-  // Initialize from LocalStorage or seed data
+  // Firebase Auth is the only source of the signed-in identity.
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.classConfig) {
-          setClassConfig({
-            ...INITIAL_CLASS_CONFIG,
-            ...parsed.classConfig,
-            achievementBonusRules: parsed.classConfig.achievementBonusRules || DEFAULT_ACHIEVEMENT_RULES,
-          });
-        }
-        if (parsed.students && Array.isArray(parsed.students)) setStudents(parsed.students);
-        if (parsed.behaviorCategories && Array.isArray(parsed.behaviorCategories)) setBehaviorCategories(parsed.behaviorCategories);
-        if (parsed.disciplineLogs && Array.isArray(parsed.disciplineLogs)) setDisciplineLogs(parsed.disciplineLogs);
-      }
-    } catch (e) {
-      console.warn('Error reading from localStorage:', e);
-    }
-  }, []);
-
-  // Save to LocalStorage whenever state changes
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        LOCAL_STORAGE_KEY,
-        JSON.stringify({
-          classConfig,
-          students,
-          behaviorCategories,
-          disciplineLogs,
-          lastSaved: new Date().toISOString(),
-        })
-      );
-    } catch (e) {
-      console.error('Error saving to localStorage:', e);
-    }
-  }, [classConfig, students, behaviorCategories, disciplineLogs]);
-
-  // Handle Firebase Auth & Always Default to Cloud Firestore
-  useEffect(() => {
-    let isMounted = true;
-
-    const initCloudConnection = async () => {
-      try {
-        setIsCloudSyncing(true);
-        await testFirestoreConnection();
-        await ensureFirebaseAuth();
-
-        // 1. Sync / Load Users from Firestore
-        const cloudUsers = await getAllUsersFromCloud();
-        const effectiveUsers = cloudUsers && cloudUsers.length > 0 ? cloudUsers : userAccounts;
-        if (cloudUsers && cloudUsers.length > 0) {
-          if (isMounted) setUserAccounts(cloudUsers);
-        } else {
-          await Promise.all(INITIAL_USER_ACCOUNTS.map((u) => saveUserToCloud(u)));
-        }
-
-        // 2. Sync / Load Classes from Firestore (Gắn liền với danh sách GVCN trong mục tài khoản & phân quyền)
-        const cloudClasses = await getAllClassesFromCloud();
-        if (cloudClasses && cloudClasses.length > 0) {
-          const tiedClasses = cloudClasses.filter((c) => isClassTiedToTeacher(c, effectiveUsers));
-          const orphaned = cloudClasses.filter((c) => !isClassTiedToTeacher(c, effectiveUsers));
-          // Tự động xóa các lớp mồ côi khỏi Firestore
-          orphaned.forEach((oc) => deleteClassFromCloud(oc.id));
-          if (isMounted) setSchoolClasses(tiedClasses.length > 0 ? tiedClasses : INITIAL_SCHOOL_CLASSES);
-        } else {
-          await Promise.all(INITIAL_SCHOOL_CLASSES.map((c) => saveClassToCloud(c)));
-        }
-
-        // 3. Sync / Load Period Locks from Firestore
-        const cloudLocks = await getPeriodLocksFromCloud();
-        if (cloudLocks && cloudLocks.length > 0) {
-          if (isMounted) setLockedPeriods(cloudLocks);
-        } else {
-          await Promise.all(INITIAL_LOCKED_PERIODS.map((l) => savePeriodLockToCloud(l)));
-        }
-
-        // 4. Sync / Load active teacher's class data from Firestore
-        const teacherId = activeAccount?.uid || (auth.currentUser ? auth.currentUser.uid : INITIAL_TEACHER_ID);
-        const [cloudConfig, cloudStudents, cloudCats, cloudLogs] = await Promise.all([
-          getClassConfigFromCloud(teacherId),
-          getStudentsFromCloud(teacherId),
-          getBehaviorCategoriesFromCloud(teacherId),
-          getDisciplineLogsFromCloud(teacherId),
-        ]);
-
-        if (isMounted) {
-          if (cloudConfig) {
-            setClassConfig(cloudConfig);
-          } else {
-            const defConfig = { ...INITIAL_CLASS_CONFIG, teacherId };
-            await saveClassConfigToCloud(defConfig);
-          }
-
-          if (cloudStudents && cloudStudents.length > 0) {
-            setStudents(cloudStudents);
-          } else {
-            await Promise.all(INITIAL_STUDENTS.map((s) => saveStudentToCloud({ ...s, teacherId })));
-          }
-
-          if (cloudCats && cloudCats.length > 0) {
-            setBehaviorCategories(cloudCats);
-          } else {
-            await Promise.all(INITIAL_BEHAVIOR_CATEGORIES.map((c) => saveBehaviorCategoryToCloud({ ...c, teacherId })));
-          }
-
-          if (cloudLogs && cloudLogs.length > 0) {
-            setDisciplineLogs(cloudLogs);
-          } else {
-            await Promise.all(INITIAL_DISCIPLINE_LOGS.map((l) => saveDisciplineLogToCloud({ ...l, teacherId })));
-          }
-        }
-      } catch (err: any) {
-        console.warn('Default Firestore connection notice:', err);
-      } finally {
-        if (isMounted) {
-          setIsCloudSyncing(false);
-          setIsLocalMode(false); // ALWAYS default to Cloud Firestore!
-        }
-      }
-    };
-
-    initCloudConnection();
-
+    let disposed = false;
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (!isMounted) return;
-      setCurrentUser(user);
-      setIsAuthLoading(false);
-      setIsLocalMode(false);
-      if (user) {
-        await loadUserDataFromFirestore(user.uid);
+      clearSessionData();
+      setCurrentUser(user && !user.isAnonymous ? user : null);
+      setIsAuthLoading(true);
+      try {
+        if (user && !user.isAnonymous) {
+          const profile = await getUserFromCloud(user.uid);
+          if (disposed || auth.currentUser?.uid !== user.uid) return;
+          if (profile?.isActive) {
+            setActiveAccount(profile); setUserRole(profile.role);
+            await loadUserDataFromFirestore(user.uid, profile);
+          }
+        }
+      } catch (error: any) {
+        if (!disposed) setCloudSyncError(error.message || 'Không thể tải tài khoản.');
+      } finally {
+        if (!disposed) { setIsAuthLoading(false); setIsLocalMode(false); }
       }
     });
-
-    return () => {
-      isMounted = false;
-      unsubscribe();
-    };
+    return () => { disposed = true; loadVersion.current++; unsubscribe(); };
   }, []);
+
+  // Live data stays scoped to the authenticated account, including profile revocation.
+  useEffect(() => {
+    if (!currentUser || !activeAccount || currentUser.uid !== activeAccount.uid) return;
+    const teacherId = activeAccount.role === 'monitor' ? activeAccount.teacherId : (inspectorModeClass?.teacherId || activeAccount.uid);
+    if (!teacherId) return;
+    let disposed = false;
+    const stops: Array<() => void> = [];
+    const onError = (error: Error) => { if (!disposed) setCloudSyncError(error.message); };
+    stops.push(onSnapshot(doc(db, 'users', currentUser.uid), (snap) => {
+      if (disposed) return;
+      const profile = snap.data() as UserAccount | undefined;
+      if (!profile?.isActive) { clearSessionData(); void logoutUser(); return; }
+      setActiveAccount(profile); setUserRole(profile.role);
+    }, onError));
+    const subscribe = (name: string, apply: (rows: any[]) => void) => {
+      stops.push(onSnapshot(query(collection(db, name), where('teacherId', '==', teacherId)),
+        (snap) => { if (!disposed) apply(snap.docs.map((item) => item.data())); }, onError));
+    };
+    subscribe('classConfigs', (rows) => { if (rows[0]) setClassConfig(rows[0]); });
+    subscribe('students', setStudents);
+    stops.push(onSnapshot(collection(db, 'periodLocks'), (snap) => { if (!disposed) setLockedPeriods(snap.docs.map((item) => item.data() as PeriodLockStatus)); }, onError));
+    const classSource = ['admin', 'owner'].includes(activeAccount.role) ? collection(db, 'classes')
+      : query(collection(db, 'classes'), where('teacherId', '==', teacherId));
+    stops.push(onSnapshot(classSource, (snap) => { if (!disposed) setSchoolClasses(snap.docs.map((item) => item.data() as SchoolClass)); }, onError));
+    if (activeAccount.role !== 'monitor') {
+      const userSource = ['admin', 'owner'].includes(activeAccount.role) ? collection(db, 'users')
+        : query(collection(db, 'users'), where('teacherId', '==', activeAccount.uid), where('role', '==', 'monitor'));
+      stops.push(onSnapshot(userSource, (snap) => { if (!disposed) {
+        const profiles = snap.docs.map((item) => item.data() as UserAccount);
+        setUserAccounts(['admin', 'owner'].includes(activeAccount.role) ? profiles : [activeAccount, ...profiles]);
+      } }, onError));
+    }
+    subscribe('behaviorCategories', setBehaviorCategories);
+    if (activeAccount.role !== 'monitor' || activeAccount.permissions?.canViewScores) subscribe('disciplineLogs', setDisciplineLogs);
+    else setDisciplineLogs([]);
+    return () => { disposed = true; stops.forEach((stop) => stop()); };
+  }, [currentUser?.uid, activeAccount?.uid, activeAccount?.role, activeAccount?.teacherId, activeAccount?.permissions?.canViewScores, inspectorModeClass?.teacherId]);
 
   const isGoogleAuth = !!(
     currentUser &&
@@ -815,194 +520,55 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   );
 
   const getEffectiveTeacherId = (): string => {
-    if (activeAccount?.role === 'monitor') {
-      const matchedTeacher = userAccounts.find(
-        (a) => (a.role === 'teacher' || a.role === 'owner') && a.assignedClassId === activeAccount.assignedClassId
-      );
-      if (matchedTeacher) return matchedTeacher.uid;
-      return classConfig.id;
-    }
-    return activeAccount?.uid || (currentUser ? currentUser.uid : INITIAL_TEACHER_ID);
+    if (!auth.currentUser || auth.currentUser.isAnonymous || !activeAccount?.isActive) throw new Error('Vui lòng đăng nhập trước khi lưu dữ liệu.');
+    return activeAccount.role === 'monitor' ? activeAccount.teacherId! : (inspectorModeClass?.teacherId || activeAccount.uid);
   };
 
-  // Load user data from Cloud Firestore
   const loadUserDataFromFirestore = async (userId: string, accountObj?: UserAccount) => {
-    setIsCloudSyncing(true);
-    setCloudSyncError(null);
+    const version = ++loadVersion.current;
+    setIsCloudSyncing(true); setCloudSyncError(null);
+    setStudents([]); setDisciplineLogs([]); setBehaviorCategories([]);
     try {
-      const currentAcc = accountObj || activeAccount || userAccounts.find((a) => a.uid === userId);
-      let targetTeacherId = userId;
-      const isMonitorUser = currentAcc?.role === 'monitor';
-      if (isMonitorUser && currentAcc) {
-        const matchedTeacher = userAccounts.find(
-          (a) => (a.role === 'teacher' || a.role === 'owner') && a.assignedClassId === currentAcc.assignedClassId
-        );
-        if (matchedTeacher) {
-          targetTeacherId = matchedTeacher.uid;
-        } else {
-          targetTeacherId = currentAcc.assignedClassId || INITIAL_TEACHER_ID;
-        }
+      const account = accountObj || await getUserFromCloud(userId);
+      if (!account?.isActive) throw new Error('Tài khoản chưa được cấp quyền hoặc đã bị khóa.');
+      const teacherId = account.role === 'monitor' ? account.teacherId : userId;
+      if (!teacherId) throw new Error('Tài khoản lớp trưởng chưa được gán giáo viên.');
+      const [config, studentsData, categories, logs, accounts, classes, locks] = await Promise.all([
+        getClassConfigFromCloud(teacherId), getStudentsFromCloud(teacherId),
+        getBehaviorCategoriesFromCloud(teacherId),
+        account.role === 'monitor' && !account.permissions?.canViewScores ? Promise.resolve([]) : getDisciplineLogsFromCloud(teacherId),
+        getAllUsersFromCloud(), getAllClassesFromCloud(), getPeriodLocksFromCloud(),
+      ]);
+      if (version !== loadVersion.current || auth.currentUser?.uid !== userId) return;
+      let nextConfig = config;
+      if (!nextConfig && account.role !== 'monitor') {
+        nextConfig = { ...INITIAL_CLASS_CONFIG, id: `cfg_${userId}`, teacherId: userId,
+          className: account.assignedClassName || 'Lớp chủ nhiệm', homeroomTeacher: account.displayName,
+          teacherEmail: account.email, teacherPhone: account.phone || '' };
+        await saveClassConfigToCloud(nextConfig);
       }
-
-      // Load config
-      const configQuery = query(collection(db, 'classConfigs'), where('teacherId', '==', targetTeacherId));
-      const configSnap = await getDocs(configQuery);
-      if (!configSnap.empty) {
-        setClassConfig(configSnap.docs[0].data() as ClassConfig);
-      } else if (!isMonitorUser) {
-        // First time cloud user: save initial config
-        const newConfig = { ...INITIAL_CLASS_CONFIG, teacherId: userId };
-        await setDoc(doc(db, 'classConfigs', newConfig.id), newConfig);
-        setClassConfig(newConfig);
+      let nextCategories = categories;
+      if (!nextCategories.length && account.role !== 'monitor') {
+        nextCategories = INITIAL_BEHAVIOR_CATEGORIES.map((category) => ({ ...category, id: `cat_${userId}_${category.code}`, teacherId: userId }));
+        await Promise.all(nextCategories.map(saveBehaviorCategoryToCloud));
       }
-
-      // Load students
-      const studentsQuery = query(collection(db, 'students'), where('teacherId', '==', targetTeacherId));
-      const studentsSnap = await getDocs(studentsQuery);
-      if (!studentsSnap.empty) {
-        const loadedStudents = studentsSnap.docs.map((d) => d.data() as Student);
-        setStudents(loadedStudents);
-      } else if (!isMonitorUser) {
-        // Upload initial sample students for the teacher
-        const batch = writeBatch(db);
-        const mappedStudents = INITIAL_STUDENTS.map((s) => ({ ...s, teacherId: userId }));
-        mappedStudents.forEach((s) => {
-          batch.set(doc(db, 'students', s.id), s);
-        });
-        await batch.commit();
-        setStudents(mappedStudents);
-      }
-
-      // Load categories
-      const catQuery = query(collection(db, 'behaviorCategories'), where('teacherId', '==', targetTeacherId));
-      const catSnap = await getDocs(catQuery);
-      if (!catSnap.empty) {
-        const loadedCats = catSnap.docs.map((d) => d.data() as BehaviorCategory);
-        setBehaviorCategories(loadedCats);
-      } else if (!isMonitorUser) {
-        const batch = writeBatch(db);
-        const mappedCats = INITIAL_BEHAVIOR_CATEGORIES.map((c) => ({ ...c, teacherId: userId }));
-        mappedCats.forEach((c) => {
-          batch.set(doc(db, 'behaviorCategories', c.id), c);
-        });
-        await batch.commit();
-        setBehaviorCategories(mappedCats);
-      }
-
-      // Load logs
-      const logQuery = query(collection(db, 'disciplineLogs'), where('teacherId', '==', targetTeacherId));
-      const logSnap = await getDocs(logQuery);
-      if (!logSnap.empty) {
-        const loadedLogs = logSnap.docs.map((d) => d.data() as DisciplineLog);
-        setDisciplineLogs(loadedLogs);
-      } else if (!isMonitorUser) {
-        const batch = writeBatch(db);
-        const mappedLogs = INITIAL_DISCIPLINE_LOGS.map((l) => ({ ...l, teacherId: userId }));
-        mappedLogs.forEach((l) => {
-          batch.set(doc(db, 'disciplineLogs', l.id), l);
-        });
-        await batch.commit();
-        setDisciplineLogs(mappedLogs);
-      }
-    } catch (err: any) {
-      console.error('Failed to load data from Firestore:', err);
-      setCloudSyncError(err?.message || 'Không thể đồng bộ từ Firestore');
+      if (version !== loadVersion.current || auth.currentUser?.uid !== userId) return;
+      if (nextConfig) setClassConfig(nextConfig);
+      setStudents(studentsData); setDisciplineLogs(logs); setBehaviorCategories(nextCategories);
+      setUserAccounts(accounts); setSchoolClasses(classes); setLockedPeriods(locks);
+    } catch (error: any) {
+      if (version === loadVersion.current) setCloudSyncError(error.message || 'Không thể đồng bộ từ Firestore');
+      throw error;
     } finally {
-      setIsCloudSyncing(false);
+      if (version === loadVersion.current) setIsCloudSyncing(false);
     }
   };
 
-  const registerQuickOneTouch = async (params: {
-    displayName?: string;
-    emailOrUsername?: string;
-    className?: string;
-    department?: string;
-    phone?: string;
-  }): Promise<UserAccount> => {
-    setIsCloudSyncing(true);
-    try {
-      await ensureFirebaseAuth();
-      const teacherName = params.displayName?.trim() || 'Giáo viên';
-      const className = params.className?.trim() || 'Lớp Chủ nhiệm';
-      const department = params.department || 'Khoa Chuyên ngành';
-      const emailInput = params.emailOrUsername?.trim() || `gv_${Date.now()}@cdnghe01bqp.edu.vn`;
-      const isEmail = emailInput.includes('@');
-      const username = isEmail ? emailInput.split('@')[0] : emailInput;
-      const effectiveEmail = isEmail ? emailInput : `${username.toLowerCase()}@cdnghe01bqp.edu.vn`;
-
-      const teacherId = `teacher_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-      const classId = `cls_${Date.now()}`;
-
-      const newClass: SchoolClass = {
-        id: classId,
-        className,
-        teacherId,
-        teacherName,
-        teacherEmail: effectiveEmail,
-        department,
-        schoolYear: '2025 - 2026',
-        studentCount: 0,
-        averageScore: 10.0,
-        topRankCount: 0,
-        violationCount: 0,
-      };
-
-      const isAdmin = effectiveEmail.toLowerCase() === 'sanginnova8@gmail.com' || effectiveEmail.toLowerCase().includes('admin');
-      const newAcc: UserAccount = {
-        uid: teacherId,
-        email: effectiveEmail,
-        username,
-        displayName: teacherName,
-        role: isAdmin ? 'admin' : 'teacher',
-        assignedClassId: classId,
-        assignedClassName: `Lớp ${className}`,
-        department,
-        phone: params.phone || '',
-        isActive: true,
-        lastLoginAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
-      };
-
-      // Save user & class to Firestore Cloud
-      await saveUserToCloud(newAcc);
-      await saveClassToCloud(newClass);
-
-      // Create class config
-      const newConfig: ClassConfig = {
-        ...INITIAL_CLASS_CONFIG,
-        id: `cfg_${classId}`,
-        className,
-        homeroomTeacher: teacherName,
-        teacherEmail: effectiveEmail,
-        teacherPhone: params.phone || '',
-        teacherId,
-      };
-      await saveClassConfigToCloud(newConfig);
-
-      // Save default behavior categories
-      const newCats = INITIAL_BEHAVIOR_CATEGORIES.map((c) => ({
-        ...c,
-        id: `cat_${teacherId}_${c.code}`,
-        teacherId,
-      }));
-      await Promise.all(newCats.map((c) => saveBehaviorCategoryToCloud(c)));
-
-      setUserAccounts((prev) => [...prev, newAcc]);
-      setSchoolClasses((prev) => [...prev, newClass]);
-      setClassConfig(newConfig);
-      setBehaviorCategories(newCats);
-      setStudents([]);
-      setDisciplineLogs([]);
-      setActiveAccount(newAcc);
-      setUserRole(newAcc.role);
-      setIsLocalMode(false);
-
-      return newAcc;
-    } catch (err: any) {
-      console.error('One-touch registration error:', err);
-      throw err;
-    } finally {
-      setIsCloudSyncing(false);
-    }
+  const registerQuickOneTouch = async (_params: { displayName?: string; emailOrUsername?: string; className?: string; department?: string; phone?: string }): Promise<UserAccount> => {
+    await login();
+    const account = await getUserFromCloud(auth.currentUser!.uid);
+    if (!account) throw new Error('Không thể tải tài khoản.');
+    return account;
   };
 
   const login = async () => {
@@ -1030,9 +596,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       let acc = await getUserFromCloud(user.uid);
       if (!acc) {
-        acc = userAccounts.find((a) => a.email.toLowerCase() === user.email?.toLowerCase()) || null;
-      }
-      if (!acc) {
         const teacherId = user.uid;
         const classId = `cls_${Date.now()}`;
         const autoClassName = 'Điện CN K45';
@@ -1050,13 +613,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           violationCount: 0,
         };
 
-        const isAdmin = user.email?.toLowerCase() === 'sanginnova8@gmail.com' || user.email?.toLowerCase().includes('admin');
-        acc = {
+          acc = {
           uid: teacherId,
           email: user.email || '',
           username: user.email ? user.email.split('@')[0] : 'user',
           displayName: user.displayName || 'Giáo viên',
-          role: isAdmin ? 'admin' : 'teacher',
+          role: 'teacher',
           authProvider: 'google',
           assignedClassId: classId,
           assignedClassName: `Lớp ${autoClassName}`,
@@ -1088,10 +650,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         acc = { ...acc, authProvider: 'google' };
       }
 
+      if (!acc.isActive) { await logoutUser(); throw new Error('Tài khoản đã bị khóa.'); }
+
       setActiveAccount(acc);
       setUserRole(acc.role);
       setIsLocalMode(false);
-      await loadUserDataFromFirestore(user.uid);
+      await loadUserDataFromFirestore(user.uid, acc);
     } catch (err: any) {
       console.error('Login error:', err);
       throw err;
@@ -1120,6 +684,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     try {
+      const existing = await getUserFromCloud(user.uid);
+      if (existing) {
+        if (!existing.isActive) throw new Error('Tài khoản đã bị khóa.');
+        setActiveAccount(existing); setUserRole(existing.role);
+        await loadUserDataFromFirestore(user.uid, existing);
+        return;
+      }
       const teacherId = user.uid;
       const classId = `cls_${Date.now()}`;
       const className = customClassName?.trim() || 'Lớp Mới K46';
@@ -1138,13 +709,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         violationCount: 0,
       };
 
-      const isAdmin = user.email?.toLowerCase() === 'sanginnova8@gmail.com' || user.email?.toLowerCase().includes('admin');
       const newAcc: UserAccount = {
         uid: teacherId,
         email: user.email || '',
         username: user.email ? user.email.split('@')[0] : 'user',
         displayName: user.displayName || 'Giáo viên',
-        role: isAdmin ? 'admin' : 'teacher',
+        role: 'teacher',
         assignedClassId: classId,
         assignedClassName: `Lớp ${className}`,
         department: department || 'Khoa Chuyên ngành',
@@ -1174,7 +744,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setActiveAccount(newAcc);
       setUserRole(newAcc.role);
       setIsLocalMode(false);
-      await loadUserDataFromFirestore(user.uid);
+      await loadUserDataFromFirestore(user.uid, newAcc);
     } catch (err: any) {
       console.error('Google register error:', err);
       throw err;
@@ -1183,11 +753,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const loginAsGuest = () => {
-    setUserRole('guest');
-    setActiveAccount(null);
-    setInspectorModeClass(null);
-  };
+  const loginAsGuest = () => { void logout(); };
 
   const registerWithEmailPassword = async (params: {
     email: string;
@@ -1199,7 +765,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }) => {
     setIsCloudSyncing(true);
     try {
-      await ensureFirebaseAuth();
       const cleanInput = params.email.trim();
       const isEmail = cleanInput.includes('@');
       const username = isEmail ? cleanInput.split('@')[0] : cleanInput;
@@ -1214,14 +779,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         throw new Error('Tên đăng nhập hoặc Email này đã được sử dụng. Vui lòng chọn tên khác.');
       }
 
-      let teacherId = `teacher_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      try {
-        const user = await registerWithEmail(effectiveEmail, params.pass, params.name);
-        teacherId = user.uid;
-      } catch (authErr: any) {
-        console.warn('Firebase Auth email provider disabled in console, creating account directly in Firestore Cloud:', authErr);
-        // Continue creating in Firestore without breaking!
-      }
+      const user = await registerWithEmail(effectiveEmail, params.pass, params.name);
+      const teacherId = user.uid;
 
       const classId = `cls_${Date.now()}`;
       const newClass: SchoolClass = {
@@ -1242,12 +801,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         email: effectiveEmail,
         username,
         displayName: params.name,
-        role: effectiveEmail.includes('admin') ? 'admin' : 'teacher',
+        role: 'teacher',
         assignedClassId: classId,
         assignedClassName: `Lớp ${params.className}`,
         department: params.department,
         phone: params.phone || '',
-        password: params.pass,
         isActive: true,
         lastLoginAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
       };
@@ -1295,136 +853,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const loginUserWithEmailPassword = async (loginIdentifier: string, pass: string) => {
     setIsCloudSyncing(true);
-    const cleanId = loginIdentifier.trim().toLowerCase();
-
-    // Check master admin credentials: Sanginnova / Baotran2010
-    if (
-      (cleanId === 'sanginnova' ||
-        cleanId === 'sanginnova8@gmail.com' ||
-        cleanId === 'sanginnova@gmail.com') &&
-      (pass === 'Baotran2010' || pass === '123456')
-    ) {
-      const masterAdmin: UserAccount = {
-        uid: 'admin_sanginnova',
-        email: cleanId.includes('@') ? cleanId : 'sanginnova8@gmail.com',
-        username: 'Sanginnova',
-        displayName: 'Thầy Trần Văn Sang',
-        role: 'admin',
-        assignedClassId: '10A8',
-        assignedClassName: 'Lớp 10A8',
-        department: 'Khoa Điện - Điện tử',
-        phone: '0979.888.999',
-        password: pass,
-        isActive: true,
-        lastLoginAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
-      };
-
-      setActiveAccount(masterAdmin);
-      setUserRole('admin');
-      setIsLocalMode(false);
-      try {
-        await saveUserToCloud(masterAdmin);
-      } catch (e) {
-        console.warn('Could not sync master admin to cloud:', e);
-      }
-      setIsCloudSyncing(false);
-      return;
-    }
-
-    // 1. Check against known accounts in memory or Cloud Firestore
-    const matchFn = (a: UserAccount) => {
-      const aEmail = a.email ? a.email.toLowerCase() : '';
-      const aUser = a.username ? a.username.toLowerCase() : '';
-      const emailPrefix = aEmail.split('@')[0];
-      return (
-        aUser === cleanId ||
-        aEmail === cleanId ||
-        emailPrefix === cleanId ||
-        aEmail === `${cleanId}@cdnghe01bqp.edu.vn` ||
-        aEmail === `${cleanId}@school.local` ||
-        aEmail === `${cleanId}@gmail.com`
-      );
-    };
-
-    let matchedAcc = userAccounts.find(matchFn);
-
-    if (!matchedAcc) {
-      try {
-        const cloudUsers = await getAllUsersFromCloud();
-        matchedAcc = cloudUsers.find(matchFn);
-      } catch (e) {
-        console.warn('Cloud users lookup note:', e);
-      }
-    }
-
-    if (matchedAcc) {
-      if (matchedAcc.isActive === false) {
-        setIsCloudSyncing(false);
-        throw new Error('Tài khoản này đang bị tạm khóa quyền truy cập. Vui lòng liên hệ Thầy/Cô chủ nhiệm hoặc Ban Giám Hiệu.');
-      }
-
-      // Check password if stored
-      if (matchedAcc.password) {
-        if (matchedAcc.password !== pass) {
-          if (
-            (pass === '123456' || pass === 'Baotran2010') &&
-            (matchedAcc.role === 'admin' || matchedAcc.email.toLowerCase().includes('sanginnova'))
-          ) {
-            matchedAcc.password = pass;
-            saveUserToCloud(matchedAcc).catch(() => {});
-          } else {
-            setIsCloudSyncing(false);
-            throw new Error(`Mật khẩu không chính xác. Thầy cô vui lòng kiểm tra lại (Mật khẩu mặc định hệ thống cấp là 123456 hoặc liên hệ Admin).`);
-          }
-        }
-      } else {
-        // Set password for account that was created without password
-        matchedAcc.password = pass;
-        saveUserToCloud(matchedAcc).catch(() => {});
-      }
-
-      setActiveAccount(matchedAcc);
-      setUserRole(matchedAcc.role);
-      setIsLocalMode(false);
-      await loadUserDataFromFirestore(matchedAcc.uid, matchedAcc);
-      setIsCloudSyncing(false);
-      return;
-    }
-
-    // 2. Try Firebase Auth
     try {
-      const emailToUse = loginIdentifier.includes('@') ? loginIdentifier : `${loginIdentifier}@cdnghe01bqp.edu.vn`;
-      const user = await loginWithEmail(emailToUse, pass);
-      let acc = await getUserFromCloud(user.uid);
-      if (!acc) {
-        acc = userAccounts.find((a) => a.email.toLowerCase() === emailToUse.toLowerCase()) || null;
+      const identifier = loginIdentifier.trim().toLowerCase();
+      const email = identifier.includes('@') ? identifier : `${identifier}@cdnghe01bqp.edu.vn`;
+      const user = await loginWithEmail(email, pass);
+      let account = await getUserFromCloud(user.uid);
+      if (!account) {
+        account = { uid: user.uid, email: user.email || email, displayName: user.displayName || 'Giáo viên',
+          role: 'teacher', assignedClassId: `cls_${user.uid}`, assignedClassName: 'Lớp chủ nhiệm', isActive: true };
+        await saveUserToCloud(account);
+        await saveClassToCloud({ id: account.assignedClassId, className: account.assignedClassName, teacherId: user.uid,
+          teacherName: account.displayName, teacherEmail: account.email, department: '', schoolYear: INITIAL_CLASS_CONFIG.schoolYear,
+          studentCount: 0, averageScore: 0, topRankCount: 0, violationCount: 0 });
       }
-      if (!acc) {
-        const isAdmin = emailToUse.toLowerCase().includes('admin') || emailToUse.toLowerCase().includes('sanginnova');
-        acc = {
-          uid: user.uid,
-          email: user.email || emailToUse,
-          displayName: user.displayName || (isAdmin ? 'Admin Quản Trị' : 'Giáo viên'),
-          role: isAdmin ? 'admin' : 'teacher',
-          assignedClassId: '10A8',
-          assignedClassName: 'Lớp 10A8',
-          department: 'Khoa Đào tạo nghề',
-          phone: '',
-          isActive: true,
-          lastLoginAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
-        };
-        await saveUserToCloud(acc);
-      }
-      setActiveAccount(acc);
-      setUserRole(acc.role);
-      setIsLocalMode(false);
-      await loadUserDataFromFirestore(user.uid);
-    } catch (err: any) {
-      console.warn('Direct login fallback note:', err);
-      throw new Error('Tài khoản hoặc mật khẩu không chính xác. Thầy cô vui lòng kiểm tra lại.');
-    } finally {
-      setIsCloudSyncing(false);
-    }
+      if (!account.isActive) { await logoutUser(); throw new Error('Tài khoản đã bị khóa.'); }
+      setActiveAccount(account); setUserRole(account.role); setIsLocalMode(false);
+      await loadUserDataFromFirestore(user.uid, account);
+    } catch (error: any) {
+      throw new Error(error.code?.startsWith('auth/') ? 'Email hoặc mật khẩu không chính xác, hoặc đăng nhập email chưa được bật trong Firebase.' : error.message);
+    } finally { setIsCloudSyncing(false); }
   };
 
   const logout = async () => {
@@ -1433,10 +880,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch (err: any) {
       console.error('Logout error:', err);
     } finally {
-      setUserRole('guest');
-      setActiveAccount(null);
-      setInspectorModeClass(null);
-      setIsLocalMode(true);
+      clearSessionData();
+      setIsLocalMode(false);
       try {
         localStorage.removeItem('so_cham_diem_active_uid');
         localStorage.setItem('so_cham_diem_user_role', 'guest');
@@ -1444,44 +889,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Sync current in-memory local data up to Firestore
+  // Cloud data is already synchronized; retry only the active authenticated scope.
   const syncLocalToCloud = async () => {
-    if (!currentUser) {
-      alert('Vui lòng đăng nhập Google trước để đồng bộ dữ liệu lên Cloud Firestore!');
-      return;
-    }
+    const teacherId = getEffectiveTeacherId();
+    if (activeAccount?.role === 'monitor') throw new Error('Lớp trưởng không được tải toàn bộ dữ liệu lên.');
+    if (classConfig.teacherId !== teacherId || students.some((item) => item.teacherId !== teacherId)
+      || disciplineLogs.some((item) => item.teacherId !== teacherId)) throw new Error('Dữ liệu không thuộc tài khoản đang sử dụng.');
     setIsCloudSyncing(true);
-    setCloudSyncError(null);
     try {
-      const teacherId = currentUser.uid;
-      const batch = writeBatch(db);
-
-      // Save class config
-      const updatedConfig = { ...classConfig, teacherId, updatedAt: new Date().toISOString() };
-      batch.set(doc(db, 'classConfigs', updatedConfig.id), updatedConfig);
-
-      // Save students
-      students.forEach((s) => {
-        batch.set(doc(db, 'students', s.id), { ...s, teacherId });
-      });
-
-      // Save categories
-      behaviorCategories.forEach((c) => {
-        batch.set(doc(db, 'behaviorCategories', c.id), { ...c, teacherId });
-      });
-
-      // Save logs
-      disciplineLogs.forEach((l) => {
-        batch.set(doc(db, 'disciplineLogs', l.id), { ...l, teacherId });
-      });
-
-      await batch.commit();
-      alert('Đã đồng bộ toàn bộ dữ liệu lên Cloud Firestore an toàn!');
-    } catch (err: any) {
-      handleFirestoreError(err, OperationType.WRITE, 'syncLocalToCloud');
-    } finally {
-      setIsCloudSyncing(false);
-    }
+      await saveClassConfigToCloud(classConfig);
+      await Promise.all(students.map(saveStudentToCloud));
+      await Promise.all(behaviorCategories.map(saveBehaviorCategoryToCloud));
+      await Promise.all(disciplineLogs.map(saveDisciplineLogToCloud));
+      setCloudSyncError(null);
+    } finally { setIsCloudSyncing(false); }
   };
 
   // Update Class Config
@@ -1489,13 +910,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const updated = {
       ...classConfig,
       ...updates,
+      id: classConfig.id,
+      teacherId: classConfig.teacherId,
       updatedAt: new Date().toISOString(),
     };
-    setClassConfig(updated);
     try {
       await saveClassConfigToCloud(updated);
+      setClassConfig(updated);
     } catch (err) {
-      console.warn('Auto cloud sync config notice:', err);
+      setCloudSyncError(String(err)); throw err;
     }
   };
 
@@ -1512,44 +935,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       parentLookupToken: token,
       teacherId,
       classId: classConfig.id,
+
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    setStudents((prev) => [...prev, newStudent]);
     try {
       await saveStudentToCloud(newStudent);
+      setStudents((prev) => [...prev.filter((item) => item.id !== newStudent.id), newStudent]);
     } catch (err) {
-      console.warn('Auto cloud sync student notice:', err);
+      setCloudSyncError(String(err)); throw err;
     }
     return newStudent;
   };
 
-  // Update Student
+  // Persist before reflecting an edit in the interface.
   const updateStudent = async (id: string, updates: Partial<Student>) => {
-    if (userRole === 'monitor') {
-      throw new Error('Lớp trưởng chỉ được phép chấm điểm nề nếp, không có quyền chỉnh sửa thông tin học sinh.');
-    }
-    let updatedStudent: Student | null = null;
-    setStudents((prev) =>
-      prev.map((s) => {
-        if (s.id !== id) return s;
-        updatedStudent = {
-          ...s,
-          ...updates,
-          updatedAt: new Date().toISOString(),
-        };
-        return updatedStudent;
-      })
-    );
-
-    if (updatedStudent) {
-      try {
-        await saveStudentToCloud(updatedStudent);
-      } catch (err) {
-        console.warn('Auto cloud sync update student notice:', err);
-      }
-    }
+    if (userRole === 'monitor') throw new Error('Lớp trưởng không được chỉnh sửa học sinh.');
+    const student = students.find((item) => item.id === id);
+    if (!student) return;
+    const next = { ...student, ...updates, id: student.id, teacherId: student.teacherId, updatedAt: new Date().toISOString() };
+    await saveStudentToCloud(next);
+    setStudents((prev) => prev.map((item) => item.id === id ? next : item));
   };
 
   // Delete single student
@@ -1591,7 +998,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ...logsToRemove.map((lid) => deleteDisciplineLogFromCloud(lid)),
       ]);
     } catch (err) {
-      console.warn('Auto cloud delete notice:', err);
+      setCloudSyncError(String(err)); throw err;
     }
 
     return { count: ids.length };
@@ -1694,31 +1101,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return newCat;
   };
 
-  // Update Category
+  // Persist category edits before reflecting them in the interface.
   const updateBehaviorCategory = async (id: string, updates: Partial<BehaviorCategory>) => {
-    if (userRole === 'monitor') {
-      throw new Error('Lớp trưởng không có quyền chỉnh sửa danh mục vi phạm.');
-    }
-    let updatedCat: BehaviorCategory | null = null;
-    setBehaviorCategories((prev) =>
-      prev.map((c) => {
-        if (c.id !== id) return c;
-        updatedCat = {
-          ...c,
-          ...updates,
-          updatedAt: new Date().toISOString(),
-        };
-        return updatedCat;
-      })
-    );
-
-    if (updatedCat) {
-      try {
-        await saveBehaviorCategoryToCloud(updatedCat);
-      } catch (err) {
-        console.warn('Category update cloud note:', err);
-      }
-    }
+    if (userRole === 'monitor') throw new Error('Lớp trưởng không được chỉnh sửa danh mục.');
+    const category = behaviorCategories.find((item) => item.id === id);
+    if (!category) return;
+    const next = { ...category, ...updates, id: category.id, teacherId: category.teacherId, updatedAt: new Date().toISOString() };
+    await saveBehaviorCategoryToCloud(next);
+    setBehaviorCategories((prev) => prev.map((item) => item.id === id ? next : item));
   };
 
   // Toggle active category
@@ -1758,21 +1148,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true };
   };
 
-  // Reset Behavior Categories to standard defaults (Thông tư Bộ GD&ĐT)
   const resetBehaviorCategoriesToDefault = async () => {
-    if (userRole === 'monitor') {
-      throw new Error('Lớp trưởng không có quyền khôi phục danh mục.');
-    }
-    setBehaviorCategories(INITIAL_BEHAVIOR_CATEGORIES);
-    try {
-      const batch = writeBatch(db);
-      INITIAL_BEHAVIOR_CATEGORIES.forEach((c) => {
-        batch.set(doc(db, 'behaviorCategories', c.id), c);
-      });
-      await batch.commit();
-    } catch (err) {
-      console.warn('Reset categories cloud note:', err);
-    }
+    if (userRole === 'monitor') throw new Error('Lớp trưởng không được khôi phục danh mục.');
+    const teacherId = getEffectiveTeacherId();
+    const categories = INITIAL_BEHAVIOR_CATEGORIES.map((category) => ({ ...category, id: `cat_${teacherId}_${category.code}`, teacherId }));
+    await Promise.all(categories.map(saveBehaviorCategoryToCloud));
+    setBehaviorCategories(categories);
   };
 
   // ACHIEVEMENT BONUS RULES MUTATORS
@@ -1934,6 +1315,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       totalScore: Math.round(logData.scorePerUnit * logData.count * 100) / 100,
       teacherId,
       classId: classConfig.id,
+      createdBy: auth.currentUser?.uid,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       history: [
@@ -1946,12 +1328,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ],
     };
 
-    setDisciplineLogs((prev) => [newLog, ...prev]);
-
     try {
       await saveDisciplineLogToCloud(newLog);
+      setDisciplineLogs((prev) => [newLog, ...prev.filter((log) => log.id !== newLog.id)]);
     } catch (err) {
-      console.warn('Auto cloud sync discipline log notice:', err);
+      setCloudSyncError(String(err)); throw err;
     }
 
     return { log: newLog, duplicateWarning: isDuplicate };
@@ -1988,6 +1369,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       totalScore: Math.round(data.scorePerUnit * data.count * 100) / 100,
       teacherId,
       classId: classConfig.id,
+      createdBy: auth.currentUser?.uid,
       createdAt: nowIso,
       updatedAt: nowIso,
       history: [
@@ -2000,13 +1382,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ],
     }));
 
-    setDisciplineLogs((prev) => [...createdLogs, ...prev]);
+    // Commit state after all records have been persisted.
 
     // Immediately save all logs into Cloud Firestore
     try {
       await Promise.all(createdLogs.map((item) => saveDisciplineLogToCloud(item)));
+      setDisciplineLogs((prev) => [...createdLogs, ...prev.filter((log) => !createdLogs.some((item) => item.id === log.id))]);
     } catch (err) {
-      console.warn('Bulk log cloud sync error:', err);
+      setCloudSyncError(String(err)); throw err;
     }
 
     return { logs: createdLogs };
@@ -2042,12 +1425,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       history: [...(target.history || []), historyEntry],
     };
 
-    setDisciplineLogs((prev) => prev.map((l) => (l.id === id ? updatedLog : l)));
-
     try {
       await saveDisciplineLogToCloud(updatedLog);
+      setDisciplineLogs((prev) => prev.map((l) => (l.id === id ? updatedLog : l)));
     } catch (err) {
-      console.warn('Auto cloud sync update log notice:', err);
+      setCloudSyncError(String(err)); throw err;
     }
   };
 
@@ -2061,12 +1443,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       throw new Error(`Tuần ${target.weekNumber} đã được khóa thi đua. Không thể xóa bản ghi.`);
     }
 
-    setDisciplineLogs((prev) => prev.filter((l) => l.id !== id));
-
     try {
       await deleteDisciplineLogFromCloud(id);
+      setDisciplineLogs((prev) => prev.filter((l) => l.id !== id));
     } catch (err) {
-      console.warn('Auto cloud delete log notice:', err);
+      setCloudSyncError(String(err)); throw err;
     }
   };
 
@@ -2087,6 +1468,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       totalScore: Math.round(item.scorePerUnit * item.count * 100) / 100,
       teacherId,
       classId: classConfig.id,
+      createdBy: auth.currentUser?.uid,
       createdAt: nowIso,
       updatedAt: nowIso,
       history: [
@@ -2102,7 +1484,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setDisciplineLogs((prev) => [...createdLogs, ...prev]);
 
     try {
-      const chunkSize = 400;
+      const chunkSize = 10;
       for (let i = 0; i < createdLogs.length; i += chunkSize) {
         const chunk = createdLogs.slice(i, i + chunkSize);
         const batch = writeBatch(db);
@@ -2344,58 +1726,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return JSON.stringify(backupObj, null, 2);
   };
 
-  // Restore from JSON
-  const restoreFromJson = async (
-    jsonStr: string
-  ): Promise<{ success: boolean; message: string; studentCount?: number; logCount?: number }> => {
+  // Import is additive; every imported ID is scoped to the recipient teacher.
+  const restoreFromJson = async (jsonStr: string): Promise<{ success: boolean; message: string; studentCount?: number; logCount?: number }> => {
     try {
-      const data = JSON.parse(jsonStr);
-      if (!data.students || !Array.isArray(data.students)) {
-        return { success: false, message: 'Tệp JSON thiếu trường "students" hoặc không đúng định dạng.' };
-      }
-      if (!data.disciplineLogs || !Array.isArray(data.disciplineLogs)) {
-        return { success: false, message: 'Tệp JSON thiếu trường "disciplineLogs" hoặc không đúng định dạng.' };
-      }
-
-      if (data.classConfig) setClassConfig(data.classConfig);
-      if (data.behaviorCategories && Array.isArray(data.behaviorCategories)) {
-        setBehaviorCategories(data.behaviorCategories);
-      }
-      setStudents(data.students);
-      setDisciplineLogs(data.disciplineLogs);
-
-      if (currentUser) {
-        // Also sync up to Cloud Firestore
-        const teacherId = currentUser.uid;
-        const batch = writeBatch(db);
-        if (data.classConfig) {
-          batch.set(doc(db, 'classConfigs', data.classConfig.id), { ...data.classConfig, teacherId });
+      const teacherId = getEffectiveTeacherId();
+      if (activeAccount?.role === 'monitor') throw new Error('Lớp trưởng không được khôi phục dữ liệu.');
+      const parsed = JSON.parse(jsonStr);
+      if (!Array.isArray(parsed.students) || !Array.isArray(parsed.disciplineLogs)) throw new Error('Tệp phải có danh sách students và disciplineLogs.');
+      const data = scopeBackup(parsed, teacherId, auth.currentUser!.uid, classConfig);
+      await saveClassConfigToCloud(data.classConfig);
+      // Students are committed first so log rules can validate their references.
+      for (const [name, records] of [['students', data.students], ['behaviorCategories', data.behaviorCategories], ['disciplineLogs', data.disciplineLogs]] as const) {
+        const size = name === 'disciplineLogs' ? 10 : 400;
+        for (let offset = 0; offset < records.length; offset += size) {
+          const batch = writeBatch(db);
+          records.slice(offset, offset + size).forEach((record) => batch.set(doc(db, name, record.id), record));
+          await batch.commit();
         }
-        data.students.forEach((s: Student) => {
-          batch.set(doc(db, 'students', s.id), { ...s, teacherId });
-        });
-        (data.behaviorCategories || []).forEach((c: BehaviorCategory) => {
-          batch.set(doc(db, 'behaviorCategories', c.id), { ...c, teacherId });
-        });
-        data.disciplineLogs.forEach((l: DisciplineLog) => {
-          batch.set(doc(db, 'disciplineLogs', l.id), { ...l, teacherId });
-        });
-        await batch.commit();
       }
-
-      return {
-        success: true,
-        message: 'Khôi phục dữ liệu thành công!',
-        studentCount: data.students.length,
-        logCount: data.disciplineLogs.length,
-      };
-    } catch (e: any) {
-      return { success: false, message: 'Lỗi đọc tệp JSON: ' + (e.message || String(e)) };
-    }
+      return { success: true, message: 'Đã nhập bản sao lưu vào dữ liệu của tài khoản hiện tại.', studentCount: data.students.length, logCount: data.disciplineLogs.length };
+    } catch (error: any) { return { success: false, message: 'Không thể khôi phục: ' + error.message + '. Nếu nhập dở dang, có thể thử lại cùng tệp.' }; }
   };
 
   // Reset to initial sample data
   const resetToSampleData = async () => {
+    if (auth.currentUser && !auth.currentUser.isAnonymous) throw new Error('Vui lòng đăng xuất trước khi xem dữ liệu mẫu.');
     setClassConfig(INITIAL_CLASS_CONFIG);
     setStudents(INITIAL_STUDENTS);
     setBehaviorCategories(INITIAL_BEHAVIOR_CATEGORIES);

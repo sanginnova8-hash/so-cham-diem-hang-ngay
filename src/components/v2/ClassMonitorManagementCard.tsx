@@ -64,8 +64,8 @@ Thầy/Cô ${classConfig.homeroomTeacher || 'GVCN'} gửi em thông tin tài kho
 ${window.location.origin}
 
 2. THÔNG TIN ĐĂNG NHẬP:
-• Tên đăng nhập: ${monitorAccount.username}
-• Mật khẩu: ${monitorAccount.password || '123456'}
+• Tên đăng nhập: ${monitorAccount.email}
+• Mật khẩu: Mật khẩu đã được cấp khi tạo tài khoản; không lưu trong ứng dụng.
 • Vai trò: Lớp trưởng chấm điểm nề nếp
 • Phạm vi: Lớp ${classConfig.className}
 
@@ -181,7 +181,7 @@ ${window.location.origin}
                 </div>
                 <div className="text-[11px] text-slate-500 space-x-3">
                   <span>Username: <strong className="text-blue-600 dark:text-blue-400 font-mono">{monitorAccount.username}</strong></span>
-                  <span>Mật khẩu: <strong className="text-rose-600 dark:text-rose-400 font-mono">{monitorAccount.password || '123456'}</strong></span>
+                  <span>Mật khẩu: <strong className="text-rose-600 dark:text-rose-400 font-mono">{'Không hiển thị lại'}</strong></span>
                   {monitorAccount.phone && <span>SĐT: <strong>{monitorAccount.phone}</strong></span>}
                 </div>
               </div>
