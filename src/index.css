@@ -42,6 +42,30 @@
 }
 
 /* Tabular figures for scores & numbers to prevent jitter */
+@media screen and (max-width: 767px) {
+  body { overflow-wrap: break-word; }
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+    font-size: 16px; /* Prevent Safari from zooming into small form fields. */
+    min-height: 44px;
+  }
+  button, a[role="button"] { min-height: 44px; touch-action: manipulation; }
+  .mobile-topbar > div { gap: 8px; }
+  .mobile-topbar svg { flex-shrink: 0; }
+  .mobile-dialog-panel {
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mobile-table-scroll {
+    max-height: 60dvh;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mobile-table-scroll table { min-width: 760px; }
+  main { padding-bottom: calc(6rem + env(safe-area-inset-bottom)) !important; }
+}
+
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }

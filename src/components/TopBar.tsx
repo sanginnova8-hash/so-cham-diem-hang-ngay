@@ -81,10 +81,10 @@ export const TopBar: React.FC<TopBarProps> = ({
   const isGuestOrPortal = userRole === 'guest' || activeTab === 'portal' || !activeAccount;
 
   return (
-    <header className="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-xs print:hidden">
+    <header className="mobile-topbar safe-top sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-xs print:hidden">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex items-center justify-between gap-3">
         {/* Left: Mobile Drawer Trigger + Class Badge / School Institution & Breadcrumb */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex-1 flex items-center gap-2 sm:gap-3 min-w-0">
           {/* Mobile hamburger button - Only for logged-in workspace */}
           {!isGuestOrPortal && (
             <button
@@ -110,9 +110,9 @@ export const TopBar: React.FC<TopBarProps> = ({
                 <Edit2 className="h-3 w-3 opacity-60" />
               </button>
             ) : (
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shrink-0">
+              <div className="inline-flex min-w-0 items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                 <School className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                <span>Trường CĐ Nghề 01 - BQP</span>
+                <span className="truncate">Trường CĐ Nghề 01 - BQP</span>
               </div>
             )}
 

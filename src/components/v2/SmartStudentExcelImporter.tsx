@@ -395,10 +395,10 @@ export const SmartStudentExcelImporter: React.FC<SmartStudentExcelImporterProps>
             <button
               type="button"
               onClick={downloadStudentTemplate}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              className="flex shrink-0 items-center gap-1.5 px-3 py-1.5 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
             >
               <Download className="h-3.5 w-3.5 text-blue-600" />
-              <span>Tải file Excel mẫu</span>
+              <span>Mẫu Excel</span>
             </button>
             <button
               type="button"

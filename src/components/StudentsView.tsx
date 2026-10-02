@@ -563,7 +563,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
       {/* Students Table */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto max-h-[620px] scrollbar-thin">
+        <div className="mobile-table-scroll overflow-x-auto max-h-[620px] scrollbar-thin">
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-slate-100 dark:bg-slate-750 text-slate-700 dark:text-slate-300 uppercase tracking-wider font-semibold sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700">
               <tr>
@@ -806,7 +806,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
       {/* MODAL: Thêm học sinh mới */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700">
+          <div className="mobile-dialog-panel bg-white dark:bg-slate-800 rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
               <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <UserPlus className="h-5 w-5 text-blue-600" />
@@ -832,7 +832,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                 {addErrors.studentCode && <p className="text-rose-500 mt-1">{addErrors.studentCode}</p>}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold mb-1">Họ đệm *</label>
                   <input
@@ -857,7 +857,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold mb-1">Ngày sinh</label>
                   <input
@@ -880,7 +880,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold mb-1">Họ tên phụ huynh</label>
                   <input
@@ -925,7 +925,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
       {/* MODAL: Chỉnh sửa học sinh */}
       {editingStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-700">
+          <div className="mobile-dialog-panel bg-white dark:bg-slate-800 rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-700">
             <h3 className="text-base font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
               <Edit2 className="h-5 w-5 text-blue-600" />
               <span>Chỉnh Sửa Hồ Sơ Học Sinh</span>
@@ -941,7 +941,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                   className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl font-mono text-slate-500 cursor-not-allowed"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold mb-1">Họ đệm</label>
                   <input
@@ -962,7 +962,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold mb-1">Họ tên phụ huynh</label>
                   <input
@@ -1035,7 +1035,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
       {/* MODAL: Xác nhận xóa học sinh (đơn lẻ hoặc hàng loạt) */}
       {deleteConfirmState && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-150">
+          <div className="mobile-dialog-panel bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center gap-3 text-rose-600 mb-3">
               <div className="p-2.5 bg-rose-100 dark:bg-rose-950/60 rounded-xl">
                 <AlertTriangle className="h-6 w-6 text-rose-600" />

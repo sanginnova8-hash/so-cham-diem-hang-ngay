@@ -272,7 +272,7 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
 
       {/* Main Logs Table */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto max-h-[620px] scrollbar-thin">
+        <div className="mobile-table-scroll overflow-x-auto max-h-[620px] scrollbar-thin">
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-slate-100 dark:bg-slate-750 text-slate-700 dark:text-slate-300 uppercase tracking-wider font-semibold sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700">
               <tr>
@@ -470,7 +470,7 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
         const isEditLocked = isPeriodLocked('week', editingLog.weekNumber);
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700">
+            <div className="mobile-dialog-panel bg-white dark:bg-slate-800 rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700">
               <h3 className="text-base font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
                 <Edit2 className="h-5 w-5 text-blue-600" />
                 <span>Chỉnh Sửa Ghi Nhận Nhật Ký</span>
@@ -499,7 +499,7 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block font-semibold mb-1">Điểm mỗi lần</label>
                     <input
@@ -583,7 +583,7 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
       {/* MODAL: Lịch sử chỉnh sửa */}
       {historyLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-700">
+          <div className="mobile-dialog-panel bg-white dark:bg-slate-800 rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <History className="h-4 w-4 text-blue-600" />
@@ -625,7 +625,7 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
         const isDeleteLocked = targetLog ? isPeriodLocked('week', targetLog.weekNumber) : false;
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-700 text-center">
+            <div className="mobile-dialog-panel bg-white dark:bg-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-700 text-center">
               <AlertTriangle className="h-10 w-10 text-rose-500 mx-auto mb-3" />
               <h3 className="text-base font-bold text-slate-900 dark:text-white">Xóa bản ghi nhật ký?</h3>
 
