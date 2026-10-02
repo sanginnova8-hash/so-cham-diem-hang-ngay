@@ -45,6 +45,7 @@ import { TabType } from './Navbar';
 import { SummaryZaloExportModal } from './SummaryZaloExportModal';
 import { PeriodLockBannerV2 } from './v2/PeriodLockBannerV2';
 import { DailyLogModalV2 } from './v2/DailyLogModalV2';
+import { StudentPointEditor } from './StudentPointEditor';
 
 interface WeeklySummaryViewProps {
   onNavigateTab: (tab: TabType) => void;
@@ -72,6 +73,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
   const [selectedMonth, setSelectedMonth] = useState<number>(() => currentSchoolWeek(classConfig.weeks)?.month ?? 9);
   const [selectedWeek, setSelectedWeek] = useState<number>(() => currentSchoolWeek(classConfig.weeks)?.weekNumber ?? 1);
   const [deductStudentId, setDeductStudentId] = useState<string | null>(null);
+  const [editPointsStudentId, setEditPointsStudentId] = useState<string | null>(null);
   const [rankFilter, setRankFilter] = useState<string>('all');
   const [isZaloModalOpen, setIsZaloModalOpen] = useState<boolean>(false);
 
@@ -941,6 +943,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                     </td>
                     <td className="py-2.5 px-3 text-center print:hidden">
                       <div className="flex items-center justify-center gap-1">
+                        {activeAccount?.role !== 'monitor' && <button type="button" onClick={() => setEditPointsStudentId(s.studentId)} title={`Sửa điểm đã ghi nhận của ${s.fullName}`} aria-label={`Sửa điểm của ${s.fullName}`} className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 rounded"><Edit3 className="h-4 w-4" /></button>}
                         <button
                           type="button"
                           disabled={isPeriodLocked('week', selectedWeek) || (activeAccount?.role === 'monitor' && !activeAccount.permissions?.canAddViolations)}
@@ -1781,6 +1784,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
         onClose={() => setDeductStudentId(null)}
         onSuccessToast={message => setAwardingResult(message)}
       />}
+      {editPointsStudentId && <StudentPointEditor studentId={editPointsStudentId} weekNumber={selectedWeek} onClose={() => setEditPointsStudentId(null)} />}
     </div>
   );
 };
