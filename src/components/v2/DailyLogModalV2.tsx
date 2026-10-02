@@ -25,12 +25,16 @@ interface DailyLogModalV2Props {
   isOpen: boolean;
   onClose: () => void;
   onSuccessToast?: (msg: string) => void;
+  initialStudentId?: string;
+  initialWeek?: number;
 }
 
 export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
   isOpen,
   onClose,
   onSuccessToast,
+  initialStudentId,
+  initialWeek,
 }) => {
   const {
     students,
@@ -52,9 +56,14 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
 
   // Form State
   const [eventDate, setEventDate] = useState<string>(
-    localDateString()
+    () => {
+      const today = localDateString();
+      const week = classConfig.weeks.find(item => item.weekNumber === initialWeek);
+      return week && (today < week.startDate || today > week.endDate) ? week.startDate : today;
+    }
   );
   const [selectedWeek, setSelectedWeek] = useState<number>(() => {
+    if (initialWeek !== undefined) return initialWeek;
     const today = new Date().getTime();
     for (const w of classConfig.weeks) {
       const s = new Date(w.startDate).getTime();
@@ -75,7 +84,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
 
   // Student selection
   const [studentSearch, setStudentSearch] = useState<string>('');
-  const [selectedSingleStudent, setSelectedSingleStudent] = useState<Student | null>(null);
+  const [selectedSingleStudent, setSelectedSingleStudent] = useState<Student | null>(() => students.find(student => student.id === initialStudentId) || null);
   const [selectedBulkStudentIds, setSelectedBulkStudentIds] = useState<string[]>([]);
 
   // Category selection
