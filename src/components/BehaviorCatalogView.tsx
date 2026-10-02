@@ -1015,13 +1015,14 @@ export const BehaviorCatalogView: React.FC = () => {
               </button>
               <button
                 onClick={async () => {
-                  await updateBehaviorCategory(editingCategory.id, {
+                  try { await updateBehaviorCategory(editingCategory.id, {
                     name: editingCategory.name,
                     defaultScore: editingCategory.defaultScore,
                     basisOrRegulation: editingCategory.basisOrRegulation,
                     keywords: editingCategory.keywords,
                   });
                   setEditingCategory(null);
+                  } catch (error) { alert('Không lưu được danh mục: ' + String(error)); }
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-500"
               >
@@ -1222,13 +1223,14 @@ export const BehaviorCatalogView: React.FC = () => {
               </button>
               <button
                 onClick={async () => {
-                  await updateAchievementRule(editingAchieveRule.id, {
+                  try { await updateAchievementRule(editingAchieveRule.id, {
                     title: editingAchieveRule.title,
                     bonusScore: editingAchieveRule.bonusScore,
                     isAutoEligible: editingAchieveRule.isAutoEligible,
                     description: editingAchieveRule.description,
                   });
                   setEditingAchieveRule(null);
+                  } catch (error) { alert('Không lưu được điểm thành tích: ' + String(error)); }
                 }}
                 className="px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-bold hover:bg-amber-500"
               >

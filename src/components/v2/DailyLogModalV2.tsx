@@ -19,6 +19,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { BehaviorCategory, Student, BehaviorType } from '../../types';
 import { formatVietnameseDate, removeVietnameseAccents } from '../../lib/utils';
+import { localDateString } from '../../lib/logValidation';
 
 interface DailyLogModalV2Props {
   isOpen: boolean;
@@ -51,7 +52,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
 
   // Form State
   const [eventDate, setEventDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
+    localDateString()
   );
   const [selectedWeek, setSelectedWeek] = useState<number>(() => {
     const today = new Date().getTime();

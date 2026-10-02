@@ -27,10 +27,13 @@ service cloud.firestore {
     }
     function validLog() {
       let log = request.resource.data;
-      return log.type in ['deduct', 'bonus'] && log.count is number && log.count > 0
+      return log.type in ['deduct', 'bonus'] && log.count is int && log.count > 0
         && log.month is int && log.month >= 1 && log.month <= 12
         && log.weekNumber is int && log.weekNumber >= 1 && log.weekNumber <= 53
         && log.scorePerUnit is number && log.scorePerUnit >= 0
+        && log.totalScore is number && log.totalScore >= 0
+        && log.totalScore >= log.scorePerUnit * log.count - 0.00501
+        && log.totalScore <= log.scorePerUnit * log.count + 0.00501
         && get(/databases/$(database)/documents/students/$(log.studentId)).data.teacherId == log.teacherId
         && get(/databases/$(database)/documents/students/$(log.studentId)).data.classId == log.classId
         && get(/databases/$(database)/documents/classConfigs/$(log.classId)).data.teacherId == log.teacherId;

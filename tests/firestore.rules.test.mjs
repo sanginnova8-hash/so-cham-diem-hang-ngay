@@ -6,6 +6,11 @@ let env;
 const profile = (uid, role = 'teacher', extra = {}) => ({ uid, role, isActive: true, teacherId: '', ...extra });
 const dbFor = (uid, provider = 'password') => env.authenticatedContext(uid, { firebase: { sign_in_provider: provider } }).firestore();
 const log = (teacherId, createdBy, extra = {}) => ({ teacherId, createdBy, studentId: `student-${teacherId}`, classId: `cfg-${teacherId}`, type: 'deduct', weekNumber: 1, month: 9, count: 1, scorePerUnit: 1, totalScore: 1, ...extra });
+test('log totals must match unit score and integer count', async () => {
+  await assertFails(setDoc(doc(dbFor('a'), 'disciplineLogs', 'forged-total'), log('a', 'a', { totalScore: 100 })));
+  await assertFails(setDoc(doc(dbFor('a'), 'disciplineLogs', 'fractional-count'), log('a', 'a', { count: 1.5, totalScore: 1.5 })));
+  await assertSucceeds(setDoc(doc(dbFor('a'), 'disciplineLogs', 'rounded'), log('a', 'a', { scorePerUnit: 0.333, count: 3, totalScore: 1 })));
+});
 before(async () => { env = await initializeTestEnvironment({ projectId: 'demo-so-cham-diem', firestore: { rules: fs.readFileSync('firestore.rules', 'utf8') } }); });
 after(async () => { await env?.cleanup(); });
 beforeEach(async () => {

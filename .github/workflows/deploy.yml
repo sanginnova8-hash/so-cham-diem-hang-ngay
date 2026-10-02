@@ -30,7 +30,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
-      - run: npx --no-install tsx --test tests/loginIdentifier.test.ts
+      - run: npx --no-install tsx --test tests/*.test.ts
       - run: npm run test:backup
       - run: npm run test:rules
       - name: Authenticate to Google Cloud without stored keys

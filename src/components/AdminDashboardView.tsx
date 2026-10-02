@@ -35,6 +35,7 @@ interface AdminDashboardViewProps {
 
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNavigateTab }) => {
   const {
+    activeAccount,
     userAccounts,
     schoolClasses,
     lockedPeriods,
@@ -142,7 +143,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
     });
   };
 
-  const handleCreateClass = (e: React.FormEvent) => {
+  const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClassForm.className.trim()) return;
 
@@ -154,16 +155,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
       className: newClassForm.className.trim(),
       department: newClassForm.department.trim() || 'Khoa Điện - Điện tử',
       schoolYear: newClassForm.schoolYear || '2025 - 2026',
-      teacherId: assignedTeacher ? assignedTeacher.uid : 'admin_sanginnova',
-      teacherName: assignedTeacher ? assignedTeacher.displayName : 'Thầy Trần Văn Sang',
-      teacherEmail: assignedTeacher ? assignedTeacher.email : 'sanginnova8@gmail.com',
+      teacherId: assignedTeacher ? assignedTeacher.uid : activeAccount!.uid,
+      teacherName: assignedTeacher ? assignedTeacher.displayName : activeAccount!.displayName,
+      teacherEmail: assignedTeacher ? assignedTeacher.email : activeAccount!.email,
       studentCount: 0,
       averageScore: 10,
       topRankCount: 0,
       violationCount: 0,
     };
 
-    addSchoolClass(newClassItem);
+    try { await addSchoolClass(newClassItem); } catch (error) { setClassFeedback('Không lưu được lớp: ' + String(error)); return; }
 
     if (assignedTeacher) {
       updateUserAccount(assignedTeacher.uid, {
@@ -360,8 +361,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
 
                 <button
                   type="button"
-                  onClick={() => {
-                    const count = purgeOrphanedClasses();
+                  onClick={async () => {
+                    let count: number;
+                    try { count = await purgeOrphanedClasses(); }
+                    catch (error) { setClassFeedback('Không dọn được lớp: ' + String(error)); return; }
                     if (count > 0) {
                       setClassFeedback(`Đã dọn dẹp và xóa bỏ ${count} lớp học không có giáo viên chủ nhiệm!`);
                     } else {
@@ -458,8 +461,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                               </span>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  deleteSchoolClass(cls.id);
+                                onClick={async () => {
+                                  try { await deleteSchoolClass(cls.id); }
+                                  catch (error) { setClassFeedback('Không xóa được lớp: ' + String(error)); return; }
                                   setConfirmDeleteClassId(null);
                                   setClassFeedback(`Đã xóa thành công lớp "${cls.className}" khỏi hệ thống.`);
                                   setTimeout(() => setClassFeedback(null), 4000);

@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef, ReactNode } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { resolveLoginIdentifier } from '../lib/loginIdentifier';
+import { planStudentImport } from '../lib/studentImport';
+import { localDateString, validateLogNumbers } from '../lib/logValidation';
 import {
   collection,
   doc,
@@ -133,9 +135,9 @@ interface AppContextType {
   }) => Promise<UserAccount>;
   getClassMonitorAccount: (classId?: string) => UserAccount | undefined;
   toggleMonitorPermission: (uid: string, key: 'canAddViolations' | 'canAddBonuses' | 'canViewScores') => void;
-  deleteSchoolClass: (classId: string) => void;
-  purgeOrphanedClasses: () => number;
-  addSchoolClass: (cls: SchoolClass) => void;
+  deleteSchoolClass: (classId: string) => Promise<void>;
+  purgeOrphanedClasses: () => Promise<number>;
+  addSchoolClass: (cls: SchoolClass) => Promise<void>;
 
   // Data
   classConfig: ClassConfig;
@@ -150,7 +152,7 @@ interface AppContextType {
   deleteStudent: (id: string, deleteRelatedLogs?: boolean) => Promise<void>;
   deleteStudentsBatch: (ids: string[], deleteRelatedLogs?: boolean) => Promise<{ count: number }>;
   toggleStudentStatus: (id: string) => Promise<void>;
-  importStudentsBatch: (newStudents: Array<Omit<Student, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId'>>) => Promise<{ imported: number; updated: number }>;
+  importStudentsBatch: (newStudents: Array<Omit<Student, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId'>>, onDuplicate?: 'update' | 'skip') => Promise<{ imported: number; updated: number }>;
 
   addBehaviorCategory: (cat: Omit<BehaviorCategory, 'id' | 'createdAt' | 'updatedAt' | 'teacherId'>) => Promise<BehaviorCategory>;
   updateBehaviorCategory: (id: string, updates: Partial<BehaviorCategory>) => Promise<void>;
@@ -311,56 +313,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   };
 
-  const addSchoolClass = (cls: SchoolClass) => {
-    setSchoolClasses((prev) => {
-      const next = [...prev, cls];
-      try {
-        // Class directories are loaded from Firestore.
-      } catch (e) {}
-      return next;
-    });
-    saveClassToCloud(cls).catch(() => {});
+  const addSchoolClass = async (cls: SchoolClass) => {
+    await saveClassToCloud(cls);
+    setSchoolClasses(prev => [...prev.filter(item => item.id !== cls.id), cls]);
   };
 
-  const deleteSchoolClass = (classId: string) => {
-    setSchoolClasses((prev) => {
-      const next = prev.filter((c) => c.id !== classId);
-      try {
-        // Class directories are loaded from Firestore.
-      } catch (e) {}
-      return next;
-    });
-
-    try {
-      deleteDoc(doc(db, 'classes', classId)).catch((e) => {
-        console.warn('Delete class doc notice:', e);
-      });
-    } catch (e) {}
+  const deleteSchoolClass = async (classId: string) => {
+    await deleteDoc(doc(db, 'classes', classId));
+    setSchoolClasses(prev => prev.filter(item => item.id !== classId));
   };
 
-  const purgeOrphanedClasses = (): number => {
-    let removedCount = 0;
-    setSchoolClasses((prev) => {
-      const valid = prev.filter((cls) => {
-        const hasTeacher = isClassTiedToTeacher(cls, userAccounts);
-        if (!hasTeacher) {
-          removedCount++;
-          try {
-            deleteDoc(doc(db, 'classes', cls.id)).catch(() => {});
-          } catch (e) {}
-          return false;
-        }
-        return true;
-      });
-
-      try {
-        // Class directories are loaded from Firestore.
-      } catch (e) {}
-      return valid;
-    });
-    return removedCount;
+  const purgeOrphanedClasses = async (): Promise<number> => {
+    const orphaned = schoolClasses.filter(cls => !isClassTiedToTeacher(cls, userAccounts));
+    for (const cls of orphaned) await deleteSchoolClass(cls.id);
+    return orphaned.length;
   };
-
   // Revoke access while preserving account tombstones and class history.
   const deleteUserAccount = (uid: string) => { void updateUserAccount(uid, { isActive: false }); };
 
@@ -979,29 +946,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!ids || ids.length === 0) return { count: 0 };
     const idSet = new Set(ids);
 
-    // Update students state
-    setStudents((prev) => prev.filter((s) => !idSet.has(s.id)));
-
-    // Optionally remove related logs
-    let logsToRemove: string[] = [];
-    if (deleteRelatedLogs) {
-      logsToRemove = disciplineLogs.filter((l) => idSet.has(l.studentId)).map((l) => l.id);
-      if (logsToRemove.length > 0) {
-        const logIdSet = new Set(logsToRemove);
-        setDisciplineLogs((prev) => prev.filter((l) => !logIdSet.has(l.id)));
+    const relatedLogs = deleteRelatedLogs ? disciplineLogs.filter(log => idSet.has(log.studentId)) : [];
+    for (const log of relatedLogs) {
+      const semester = classConfig.semester1Months.includes(log.month) ? 1 : 2;
+      if (isPeriodLocked('week', log.weekNumber) || isPeriodLocked('month', log.month) || isPeriodLocked('semester', semester)) {
+        throw new Error('Học sinh có nhật ký thuộc kỳ đã khóa. Không thể xóa kèm nhật ký.');
       }
     }
-
-    // Always delete from Firestore Cloud
+    const records = [...relatedLogs.map(log => ({ collection: 'disciplineLogs', id: log.id })), ...ids.map(id => ({ collection: 'students', id }))];
     try {
-      await Promise.all([
-        ...ids.map((sid) => deleteStudentFromCloud(sid)),
-        ...logsToRemove.map((lid) => deleteDisciplineLogFromCloud(lid)),
-      ]);
-    } catch (err) {
-      setCloudSyncError(String(err)); throw err;
+      for (let i = 0; i < records.length; i += 10) {
+        const chunk = records.slice(i, i + 10);
+        const batch = writeBatch(db);
+        chunk.forEach(item => batch.delete(doc(db, item.collection, item.id)));
+        await batch.commit();
+        const studentIds = new Set(chunk.filter(item => item.collection === 'students').map(item => item.id));
+        const logIds = new Set(chunk.filter(item => item.collection === 'disciplineLogs').map(item => item.id));
+        setStudents(prev => prev.filter(student => !studentIds.has(student.id)));
+        setDisciplineLogs(prev => prev.filter(log => !logIds.has(log.id)));
+      }
+    } catch (error) {
+      setCloudSyncError(String(error));
+      throw new Error('Không xóa được toàn bộ dữ liệu. Vui lòng kiểm tra lại danh sách. ' + String(error));
     }
-
     return { count: ids.length };
   };
 
@@ -1018,64 +985,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Batch import students
   const importStudentsBatch = async (
-    newStudents: Array<Omit<Student, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId'>>
+    newStudents: Array<Omit<Student, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId'>>,
+    onDuplicate: 'update' | 'skip' = 'update'
   ): Promise<{ imported: number; updated: number }> => {
-    if (userRole === 'monitor') {
-      throw new Error('Lớp trưởng không có quyền nhập dữ liệu học sinh.');
-    }
+    if (userRole === 'monitor') throw new Error('Lớp trưởng không có quyền nhập dữ liệu học sinh.');
     const teacherId = getEffectiveTeacherId();
-    let imported = 0;
-    let updated = 0;
-
-    const currentMap = new Map(students.map((s) => [s.studentCode.trim().toUpperCase(), s]));
-    const updatedList = [...students];
-
-    for (const item of newStudents) {
-      const codeKey = item.studentCode.trim().toUpperCase();
-      if (currentMap.has(codeKey)) {
-        // Update existing by studentCode
-        const existing = currentMap.get(codeKey)!;
-        const idx = updatedList.findIndex((s) => s.id === existing.id);
-        if (idx !== -1) {
-          updatedList[idx] = {
-            ...updatedList[idx],
-            ...item,
-            updatedAt: new Date().toISOString(),
-          };
-          updated++;
-        }
-      } else {
-        // Add new
-        const token = item.parentLookupToken || Math.random().toString(36).substring(2, 12).toUpperCase();
-        const newStud: Student = {
-          ...item,
-          id: `std_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          parentLookupToken: token,
-          teacherId,
-          classId: classConfig.id,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        updatedList.push(newStud);
-        imported++;
-      }
-    }
-
-    setStudents(updatedList);
-
+    const plan = planStudentImport(students, newStudents, onDuplicate, teacherId, classConfig.id,
+      () => `std_${Date.now()}_${crypto.randomUUID()}`, new Date().toISOString());
     try {
-      const batch = writeBatch(db);
-      updatedList.forEach((s) => {
-        batch.set(doc(db, 'students', s.id), s);
-      });
-      await batch.commit();
-    } catch (err) {
-      console.warn('Batch student cloud save note:', err);
+      for (let i = 0; i < plan.changed.length; i += 400) {
+        const chunk = plan.changed.slice(i, i + 400);
+        const batch = writeBatch(db);
+        chunk.forEach(student => batch.set(doc(db, 'students', student.id), student));
+        await batch.commit();
+        setStudents(prev => [...prev.filter(student => !chunk.some(saved => saved.id === student.id)), ...chunk]);
+      }
+    } catch (error) {
+      setCloudSyncError(String(error));
+      throw new Error('Không nhập được toàn bộ danh sách. Các dòng đã lưu vẫn được giữ; có thể nhập lại cùng tệp theo mã học sinh. ' + String(error));
     }
-
-    return { imported, updated };
+    return { imported: plan.imported, updated: plan.updated };
   };
-
   // Add Category
   const addBehaviorCategory = async (
     cat: Omit<BehaviorCategory, 'id' | 'createdAt' | 'updatedAt' | 'teacherId'>
@@ -1092,13 +1022,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       updatedAt: new Date().toISOString(),
     };
 
-    setBehaviorCategories((prev) => [...prev, newCat]);
-
-    try {
-      await saveBehaviorCategoryToCloud(newCat);
-    } catch (err) {
-      console.warn('Category cloud save note:', err);
-    }
+    await saveBehaviorCategoryToCloud(newCat);
+    setBehaviorCategories((prev) => [...prev.filter((item) => item.id !== newCat.id), newCat]);
     return newCat;
   };
 
@@ -1108,6 +1033,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const category = behaviorCategories.find((item) => item.id === id);
     if (!category) return;
     const next = { ...category, ...updates, id: category.id, teacherId: category.teacherId, updatedAt: new Date().toISOString() };
+    if (!Number.isFinite(next.defaultScore) || next.defaultScore < 0) throw new Error('Điểm cộng/trừ phải là số không âm.');
     await saveBehaviorCategoryToCloud(next);
     setBehaviorCategories((prev) => prev.map((item) => item.id === id ? next : item));
   };
@@ -1139,13 +1065,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     }
 
+    await deleteDoc(doc(db, 'behaviorCategories', id));
     setBehaviorCategories((prev) => prev.filter((c) => c.id !== id));
-
-    try {
-      await deleteDoc(doc(db, 'behaviorCategories', id));
-    } catch (err) {
-      console.warn('Category delete cloud note:', err);
-    }
     return { success: true };
   };
 
@@ -1218,7 +1139,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = localDateString();
     const ruleCode = params.rule?.code || `TT_CUSTOM_${Date.now()}`;
     const defaultTitle = isWeekly ? `Khen thưởng tuần ${targetWeek}` : `Khen thưởng tháng ${targetMonth}`;
     const displayTitle = params.rule?.title || params.customNote?.trim() || defaultTitle;
@@ -1284,6 +1205,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const addDisciplineLog = async (
     logData: Omit<DisciplineLog, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId' | 'totalScore'>
   ): Promise<{ log: DisciplineLog; duplicateWarning?: boolean }> => {
+    validateLogNumbers(logData);
     if (isPeriodLocked('week', logData.weekNumber)) {
       throw new Error(`Tuần ${logData.weekNumber} đã được khóa thi đua bởi Ban Giám Hiệu. Không thể thêm mới dữ liệu.`);
     }
@@ -1344,6 +1266,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     logsData: Array<Omit<DisciplineLog, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId' | 'totalScore'>>
   ): Promise<{ logs: DisciplineLog[] }> => {
     if (!logsData || logsData.length === 0) return { logs: [] };
+    logsData.forEach(validateLogNumbers);
 
     const first = logsData[0];
     if (isPeriodLocked('week', first.weekNumber)) {
@@ -1425,6 +1348,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       updatedAt: new Date().toISOString(),
       history: [...(target.history || []), historyEntry],
     };
+    validateLogNumbers(updatedLog);
 
     try {
       await saveDisciplineLogToCloud(updatedLog);
@@ -1481,8 +1405,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         },
       ],
     }));
-
-    setDisciplineLogs((prev) => [...createdLogs, ...prev]);
+    createdLogs.forEach(validateLogNumbers);
 
     try {
       const chunkSize = 10;
@@ -1493,9 +1416,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           batch.set(doc(db, 'disciplineLogs', l.id), l);
         });
         await batch.commit();
+        setDisciplineLogs((prev) => [...chunk, ...prev.filter((log) => !chunk.some((saved) => saved.id === log.id))]);
       }
     } catch (err) {
-      console.warn('Batch discipline logs cloud sync error:', err);
+      setCloudSyncError(String(err));
+      throw new Error('Không nhập được toàn bộ nhật ký. Các dòng đã lưu vẫn được giữ; kiểm tra danh sách trước khi nhập lại. ' + String(err));
     }
 
     return { imported: createdLogs.length };
@@ -1691,7 +1616,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       });
 
-      const averageScore = monthsWithScoreCount > 0 ? clampScore(scoreSum / monthsWithScoreCount) : classConfig.baseScore;
+      const averageScore = monthsWithScoreCount > 0 ? clampScore(scoreSum / monthsWithScoreCount, classConfig.minScore, classConfig.maxScore) : classConfig.baseScore;
       const finalRank = calculateRank(averageScore);
 
       return {
