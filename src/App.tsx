@@ -38,6 +38,7 @@ function MainApp() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [reportStudentId, setReportStudentId] = useState<string | null>(null);
+  const [reportPeriodSelection, setReportPeriodSelection] = useState<import('./lib/weeklyPeriod').ReportPeriodSelection | undefined>();
 
   // Persist sidebar state
   useEffect(() => {
@@ -96,7 +97,8 @@ function MainApp() {
     return () => window.removeEventListener('keydown', handleGlobalKey);
   }, [userRole]);
 
-  const handleSelectStudentForReport = (studentId: string) => {
+  const handleSelectStudentForReport = (studentId: string, period?: import('./lib/weeklyPeriod').ReportPeriodSelection) => {
+    setReportPeriodSelection(period);
     setReportStudentId(studentId);
     setActiveTab('parent-report');
   };
@@ -194,7 +196,7 @@ function MainApp() {
           {userRole !== 'guest' && activeTab === 'categories' && <BehaviorCatalogView />}
 
           {userRole !== 'guest' && activeTab === 'parent-report' && (
-            <ParentReportView initialSelectedStudentId={reportStudentId} />
+            <ParentReportView initialSelectedStudentId={reportStudentId} initialPeriod={reportPeriodSelection} />
           )}
 
           {userRole !== 'guest' && activeTab === 'zalo-composer' && (

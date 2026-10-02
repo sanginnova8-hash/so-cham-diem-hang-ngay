@@ -1,3 +1,4 @@
+import type { ReportPeriodSelection } from '../lib/weeklyPeriod';
 import { currentSchoolWeek } from '../lib/weeklyPeriod';
 import { monitorMatchesClass } from '../lib/classScope';
 import React, { useState, useMemo } from 'react';
@@ -25,7 +26,7 @@ import { CreateClassMonitorModal } from './v2/CreateClassMonitorModal';
 
 interface DashboardViewProps {
   onNavigateTab: (tab: TabType) => void;
-  onSelectStudentForReport?: (studentId: string) => void;
+  onSelectStudentForReport?: (studentId: string, period?: ReportPeriodSelection) => void;
   onOpenNewLogModal: () => void;
   onOpenEditClassTeacherModal?: () => void;
 }
@@ -544,7 +545,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       </div>
                       <button
                         onClick={() => {
-                          if (onSelectStudentForReport) onSelectStudentForReport(s.studentId);
+                          if (onSelectStudentForReport) onSelectStudentForReport(s.studentId, { period: viewScope, weekNumber: selectedWeek, month: selectedMonth });
                           onNavigateTab('parent-report');
                         }}
                         className="p-1.5 bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 hover:bg-blue-100 rounded-lg text-xs font-semibold"

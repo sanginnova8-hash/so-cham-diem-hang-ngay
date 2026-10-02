@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { currentSchoolWeek, type ReportPeriodSelection } from '../lib/weeklyPeriod';
 import {
   MessageSquareShare,
   Copy,
@@ -33,10 +34,12 @@ import { StudentReportZaloModal } from './StudentReportZaloModal';
 
 interface ParentReportViewProps {
   initialSelectedStudentId?: string | null;
+  initialPeriod?: ReportPeriodSelection;
 }
 
 export const ParentReportView: React.FC<ParentReportViewProps> = ({
   initialSelectedStudentId,
+  initialPeriod,
 }) => {
   const {
     students,
@@ -50,10 +53,10 @@ export const ParentReportView: React.FC<ParentReportViewProps> = ({
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
     initialSelectedStudentId || (students[0]?.id ?? '')
   );
-  const [reportPeriod, setReportPeriod] = useState<'week' | 'month' | 'semester'>('week');
-  const [selectedMonth, setSelectedMonth] = useState<number>(9);
-  const [selectedWeek, setSelectedWeek] = useState<number>(1);
-  const [selectedSemester, setSelectedSemester] = useState<1 | 2>(1);
+  const [reportPeriod, setReportPeriod] = useState<'week' | 'month' | 'semester'>(initialPeriod?.period ?? 'week');
+  const [selectedMonth, setSelectedMonth] = useState<number>(() => initialPeriod?.month ?? currentSchoolWeek(classConfig.weeks)?.month ?? 9);
+  const [selectedWeek, setSelectedWeek] = useState<number>(() => initialPeriod?.weekNumber ?? currentSchoolWeek(classConfig.weeks)?.weekNumber ?? 1);
+  const [selectedSemester, setSelectedSemester] = useState<1 | 2>(() => initialPeriod?.semester ?? currentSchoolWeek(classConfig.weeks)?.semester ?? 1);
 
   const [studentSearch, setStudentSearch] = useState('');
   const [studentSortBy, setStudentSortBy] = useState<'name' | 'code'>('name');

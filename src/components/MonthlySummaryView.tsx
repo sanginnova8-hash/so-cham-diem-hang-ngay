@@ -1,3 +1,4 @@
+import type { ReportPeriodSelection } from '../lib/weeklyPeriod';
 import React, { useState, useMemo } from 'react';
 import {
   CalendarRange,
@@ -40,7 +41,7 @@ import { PeriodLockBannerV2 } from './v2/PeriodLockBannerV2';
 
 interface MonthlySummaryViewProps {
   onNavigateTab: (tab: TabType) => void;
-  onSelectStudentForReport?: (studentId: string) => void;
+  onSelectStudentForReport?: (studentId: string, period?: ReportPeriodSelection) => void;
 }
 
 export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
@@ -854,7 +855,7 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
                     <td className="py-2.5 px-3 text-center print:hidden">
                       <button
                         onClick={() => {
-                          if (onSelectStudentForReport) onSelectStudentForReport(s.studentId);
+                          if (onSelectStudentForReport) onSelectStudentForReport(s.studentId, { period: 'month', month: selectedMonth });
                           onNavigateTab('parent-report');
                         }}
                         className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 rounded transition"

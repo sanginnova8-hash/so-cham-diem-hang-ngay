@@ -1,3 +1,4 @@
+import type { ReportPeriodSelection } from '../lib/weeklyPeriod';
 import { currentSchoolWeek } from '../lib/weeklyPeriod';
 import React, { useState, useMemo } from 'react';
 import {
@@ -49,7 +50,7 @@ import { StudentPointEditor } from './StudentPointEditor';
 
 interface WeeklySummaryViewProps {
   onNavigateTab: (tab: TabType) => void;
-  onSelectStudentForReport?: (studentId: string) => void;
+  onSelectStudentForReport?: (studentId: string, period?: ReportPeriodSelection) => void;
 }
 
 export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
@@ -972,7 +973,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            if (onSelectStudentForReport) onSelectStudentForReport(s.studentId);
+                            if (onSelectStudentForReport) onSelectStudentForReport(s.studentId, { period: 'week', weekNumber: selectedWeek, month: selectedMonth });
                             onNavigateTab('parent-report');
                           }}
                           className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 rounded transition cursor-pointer"
