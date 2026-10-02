@@ -3,6 +3,7 @@ import { User, onAuthStateChanged } from 'firebase/auth';
 import { resolveLoginIdentifier } from '../lib/loginIdentifier';
 import { planStudentImport } from '../lib/studentImport';
 import { localDateString, validateLogNumbers } from '../lib/logValidation';
+import { logsForWeek } from '../lib/weeklyPeriod';
 import { rowsForClass, schoolWeeksFrom, validateSchoolYear } from '../lib/classScope';
 import {
   collection,
@@ -1511,11 +1512,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Rule: Điểm tuần = clamp (0 - 10) của (10 - tổng điểm trừ + tổng điểm cộng)
   const getWeeklySummary = (weekNumber: number, month?: number): StudentWeeklySummary[] => {
     // Filter logs for this week
-    const weekLogs = disciplineLogs.filter((l) => {
-      if (l.weekNumber !== weekNumber) return false;
-      if (month !== undefined && l.month !== month) return false;
-      return true;
-    });
+    const weekLogs = logsForWeek(disciplineLogs, weekNumber);
 
     return students.map((s) => {
       const studentLogs = weekLogs.filter((l) => l.studentId === s.id);

@@ -216,7 +216,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
         note: note.trim(),
       });
 
-      const successNotice = `Đã ghi nhận ${categoryType === 'deduct' ? 'vi phạm' : 'khen thưởng'} cho học sinh ${selectedSingleStudent.fullName}!`;
+      const successNotice = `Đã lưu ${selectedSingleStudent.fullName}: ${categoryType === 'deduct' ? '−' : '+'}${Number(customScore) * Number(count)} điểm • Tuần ${selectedWeek} • ${formatVietnameseDate(eventDate)}. Xem tổng kết Tuần ${selectedWeek}.`;
       setToastMessage(successNotice);
       if (onSuccessToast) onSuccessToast(successNotice);
 
@@ -696,16 +696,14 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
             </div>
           </div>
 
-          {/* Error Message */}
-          {errorMessage && (
-            <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900/60 rounded-xl text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-rose-500 shrink-0" />
-              <span>{errorMessage}</span>
-            </div>
-          )}
         </div>
 
         {/* Footer Actions */}
+        {(errorMessage || toastMessage) && (
+          <div role={errorMessage ? 'alert' : 'status'} aria-live="polite" className={`shrink-0 px-5 py-2 text-xs font-semibold border-t ${errorMessage ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+            {errorMessage || toastMessage}
+          </div>
+        )}
         <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 flex flex-col sm:flex-row items-center justify-between gap-3">
           <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none">
             <input

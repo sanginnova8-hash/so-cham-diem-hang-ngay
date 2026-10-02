@@ -1,3 +1,4 @@
+import { currentSchoolWeek } from '../lib/weeklyPeriod';
 import React, { useState, useMemo } from 'react';
 import {
   CalendarCheck,
@@ -65,8 +66,8 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
     deleteDisciplineLog,
   } = useApp();
 
-  const [selectedMonth, setSelectedMonth] = useState<number>(9);
-  const [selectedWeek, setSelectedWeek] = useState<number>(1);
+  const [selectedMonth, setSelectedMonth] = useState<number>(() => currentSchoolWeek(classConfig.weeks)?.month ?? 9);
+  const [selectedWeek, setSelectedWeek] = useState<number>(() => currentSchoolWeek(classConfig.weeks)?.weekNumber ?? 1);
   const [rankFilter, setRankFilter] = useState<string>('all');
   const [isZaloModalOpen, setIsZaloModalOpen] = useState<boolean>(false);
 

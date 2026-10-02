@@ -1,3 +1,4 @@
+import { currentSchoolWeek } from '../lib/weeklyPeriod';
 import { monitorMatchesClass } from '../lib/classScope';
 import React, { useState, useMemo } from 'react';
 import {
@@ -45,8 +46,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }, [userAccounts, classConfig]);
 
   // State for filters
-  const [selectedMonth, setSelectedMonth] = useState<number>(9);
-  const [selectedWeek, setSelectedWeek] = useState<number>(1);
+  const [selectedMonth, setSelectedMonth] = useState<number>(() => currentSchoolWeek(classConfig.weeks)?.month ?? 9);
+  const [selectedWeek, setSelectedWeek] = useState<number>(() => currentSchoolWeek(classConfig.weeks)?.weekNumber ?? 1);
   const [viewScope, setViewScope] = useState<'week' | 'month'>('week');
 
   // Month & Week options
