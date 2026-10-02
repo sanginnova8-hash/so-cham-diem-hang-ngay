@@ -1,5 +1,7 @@
 # Rà soát hệ thống — 02/10/2026
 
+**Cập nhật sau rà soát:** đã bổ sung lớp/niên khóa độc lập. Xem [CLASS_WORKSPACES.md](CLASS_WORKSPACES.md). Các mục 2–3 dưới đây mô tả hạn chế của phiên bản trước; lớp mới hiện đã được tách theo classConfig ID. Dữ liệu cũ không tự chuyển đổi.
+
 Phạm vi: mã ứng dụng, cấu hình Firebase/GitHub, kiểm thử nghiệp vụ và Firestore giả lập. Không sửa/xóa dữ liệu giáo viên đang sử dụng để thử nghiệm. Kết quả này không thay thế kiểm thử toàn bộ thao tác bằng tài khoản thật trên Android/iOS.
 
 ## Lỗi đã sửa trong lần rà soát

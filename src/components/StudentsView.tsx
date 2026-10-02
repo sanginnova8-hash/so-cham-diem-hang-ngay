@@ -1,3 +1,4 @@
+import { monitorMatchesClass } from '../lib/classScope';
 import React, { useState, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import {
@@ -83,8 +84,8 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
   // Monitor account for current class
   const monitorAccount = useMemo(() => {
-    return userAccounts.find((a) => a.role === 'monitor' && a.assignedClassId === classConfig.id);
-  }, [userAccounts, classConfig.id]);
+    return userAccounts.find((a) => monitorMatchesClass(a, classConfig));
+  }, [userAccounts, classConfig]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | StudentStatus>('all');

@@ -1,3 +1,4 @@
+import { monitorMatchesClass } from '../../lib/classScope';
 import React, { useState } from 'react';
 import {
   UserCheck,
@@ -43,7 +44,7 @@ export const ClassMonitorManagementCard: React.FC = () => {
 
   // Find monitor account for current class
   const monitorAccount = userAccounts.find(
-    (a) => a.role === 'monitor' && a.assignedClassId === classConfig.id
+    (a) => monitorMatchesClass(a, classConfig)
   );
 
   // Find logs recorded by monitor

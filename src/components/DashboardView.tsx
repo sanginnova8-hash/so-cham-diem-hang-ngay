@@ -1,3 +1,4 @@
+import { monitorMatchesClass } from '../lib/classScope';
 import React, { useState, useMemo } from 'react';
 import {
   Users,
@@ -40,8 +41,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Monitor account for current class
   const monitorAccount = useMemo(() => {
-    return userAccounts.find((a) => a.role === 'monitor' && a.assignedClassId === classConfig.id);
-  }, [userAccounts, classConfig.id]);
+    return userAccounts.find((a) => monitorMatchesClass(a, classConfig));
+  }, [userAccounts, classConfig]);
 
   // State for filters
   const [selectedMonth, setSelectedMonth] = useState<number>(9);

@@ -3,10 +3,12 @@ import { User, onAuthStateChanged } from 'firebase/auth';
 import { resolveLoginIdentifier } from '../lib/loginIdentifier';
 import { planStudentImport } from '../lib/studentImport';
 import { localDateString, validateLogNumbers } from '../lib/logValidation';
+import { rowsForClass, schoolWeeksFrom, validateSchoolYear } from '../lib/classScope';
 import {
   collection,
   doc,
   getDocs,
+  getDoc,
   setDoc,
   deleteDoc,
   writeBatch,
@@ -73,6 +75,9 @@ import { scopeBackup } from '../lib/scopedBackup';
 import { calculateRank, clampScore } from '../lib/utils';
 
 interface AppContextType {
+  workspaceClasses: ClassConfig[];
+  selectWorkspaceClass: (id: string) => void;
+  createWorkspaceClass: (name: string, year: string, start: string, ownerUid?: string) => Promise<void>;
   currentUser: User | null;
   isAuthLoading: boolean;
   isLocalMode: boolean;
@@ -213,10 +218,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
 
   // Core collections in memory
-  const [classConfig, setClassConfig] = useState<ClassConfig>({ ...INITIAL_CLASS_CONFIG, id: '', teacherId: '', className: '', homeroomTeacher: '', teacherEmail: '', teacherPhone: '' });
-  const [students, setStudents] = useState<Student[]>([]);
-  const [behaviorCategories, setBehaviorCategories] = useState<BehaviorCategory[]>([]);
-  const [disciplineLogs, setDisciplineLogs] = useState<DisciplineLog[]>([]);
+  const [classConfig, applyClassConfig] = useState<ClassConfig>({ ...INITIAL_CLASS_CONFIG, id: '', teacherId: '', className: '', homeroomTeacher: '', teacherEmail: '', teacherPhone: '' });
+  const scopeRef = useRef(classConfig);
+  const setClassConfig = (config: ClassConfig) => { scopeRef.current = config; applyClassConfig(config); };
+  const [students, applyStudents] = useState<Student[]>([]);
+  const [behaviorCategories, applyCategories] = useState<BehaviorCategory[]>([]);
+  const [disciplineLogs, applyLogs] = useState<DisciplineLog[]>([]);
+  // Late Firebase writes from a previous class must never populate the new view.
+  const setStudents: React.Dispatch<React.SetStateAction<Student[]>> = action => applyStudents(prev => rowsForClass(typeof action === 'function' ? action(prev) : action, scopeRef.current));
+  const setBehaviorCategories: React.Dispatch<React.SetStateAction<BehaviorCategory[]>> = action => applyCategories(prev => rowsForClass(typeof action === 'function' ? action(prev) : action, scopeRef.current, true));
+  const setDisciplineLogs: React.Dispatch<React.SetStateAction<DisciplineLog[]>> = action => applyLogs(prev => rowsForClass(typeof action === 'function' ? action(prev) : action, scopeRef.current));
 
   // Cloud profiles, never cached roles or passwords, determine access.
   const [userAccounts, setUserAccounts] = useState<UserAccount[]>([]);
@@ -225,6 +236,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [userRole, setUserRole] = useState<UserRole>('guest');
   const [activeAccount, setActiveAccount] = useState<UserAccount | null>(null);
   const [inspectorModeClass, setInspectorModeClass] = useState<SchoolClass | null>(null);
+  const [workspaceClasses, setWorkspaceClasses] = useState<ClassConfig[]>([]);
+  const [selectedConfigId, setSelectedConfigId] = useState('');
   const loadVersion = useRef(0);
   const clearSessionData = () => {
     loadVersion.current++;
@@ -233,6 +246,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStudents([]); setDisciplineLogs([]); setBehaviorCategories([]);
     setClassConfig({ ...INITIAL_CLASS_CONFIG, id: '', teacherId: '', className: '', homeroomTeacher: '', teacherEmail: '', teacherPhone: '' });
     setInspectorModeClass(null);
+    setSelectedConfigId(''); setWorkspaceClasses([]);
   };
   const loginAsRole = (role: UserRole, accountUid?: string) => {
     if (role === 'guest') { void logout(); return; }
@@ -244,7 +258,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     alert('Vui lòng đăng xuất và đăng nhập bằng tài khoản cần sử dụng.');
   };
   const isPeriodLocked = (periodType: 'week' | 'month' | 'semester', periodValue: number): boolean =>
-    lockedPeriods.some((period) => period.periodType === periodType && period.periodValue === periodValue && period.isLocked);
+    lockedPeriods.some((period) => (period.classId === classConfig.id || (!period.classId && classConfig.scopeVersion !== 2)) && period.periodType === periodType && period.periodValue === periodValue && period.isLocked);
 
   const enterInspectorMode = (classItem: SchoolClass) => {
     // Teachers are strictly restricted to their own homeroom class
@@ -254,10 +268,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     setStudents([]); setDisciplineLogs([]); setBehaviorCategories([]);
     setInspectorModeClass(classItem);
+    setSelectedConfigId(''); setWorkspaceClasses([]);
   };
 
   const exitInspectorMode = () => {
     setInspectorModeClass(null);
+    setSelectedConfigId(''); setWorkspaceClasses([]);
   };
 
   const switchWorkingClass = (classItem: SchoolClass) => {
@@ -266,12 +282,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const toggleLockPeriod = async (periodType: 'week' | 'month' | 'semester', periodValue: number, reason?: string) => {
-    const old = lockedPeriods.find((item) => item.periodType === periodType && item.periodValue === periodValue);
-    const next: PeriodLockStatus = { ...old, periodType, periodValue, isLocked: !old?.isLocked,
+    const classId = classConfig.scopeVersion === 2 ? classConfig.id : undefined;
+    const old = lockedPeriods.find((item) => (item.classId || undefined) === classId && item.periodType === periodType && item.periodValue === periodValue);
+    const next: PeriodLockStatus = { ...old, classId, periodType, periodValue, isLocked: !old?.isLocked,
       lockedAt: new Date().toISOString(), lockedBy: activeAccount?.displayName || '', reason: reason || old?.reason || '' };
     try {
       await savePeriodLockToCloud(next);
-      setLockedPeriods((prev) => [...prev.filter((item) => item.periodType !== periodType || item.periodValue !== periodValue), next]);
+      setLockedPeriods((prev) => [...prev.filter((item) => (item.classId || undefined) !== classId || item.periodType !== periodType || item.periodValue !== periodValue), next]);
     } catch (error: any) { setCloudSyncError(error.message); alert('Không lưu được khóa sổ: ' + error.message); }
   };
 
@@ -346,7 +363,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const getClassMonitorAccount = (classId?: string): UserAccount | undefined => {
-    const targetClassId = classId || activeAccount?.assignedClassId || classConfig.id;
+    const targetClassId = classId || classConfig.classDirectoryId || activeAccount?.assignedClassId || classConfig.id;
     return userAccounts.find(
       (a) => a.role === 'monitor' && a.assignedClassId === targetClassId
     );
@@ -365,7 +382,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }): Promise<UserAccount> => {
     await ensureFirebaseAuth();
-    const classId = activeAccount?.assignedClassId || classConfig.id;
+    const classId = classConfig.classDirectoryId || activeAccount?.assignedClassId || classConfig.id;
     const className = classConfig.className;
 
     // Check if monitor account for this class already exists
@@ -375,7 +392,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (existingIndex >= 0) {
       const existing = userAccounts[existingIndex];
-      const next = { ...existing, displayName: params.fullName, phone: params.phone || '', permissions: params.permissions || existing.permissions };
+      const next = { ...existing, classConfigId: classConfig.id, displayName: params.fullName, phone: params.phone || '', permissions: params.permissions || existing.permissions };
       await saveUserToCloud(next);
       setUserAccounts((prev) => prev.map((item) => item.uid === next.uid ? next : item));
       return next;
@@ -385,7 +402,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const uid = await createManagedAuthUser(email, params.password || '', params.fullName);
     const newMonitorAccount: UserAccount = {
       uid,
-      teacherId: activeAccount?.uid,
+      teacherId: getEffectiveTeacherId(),
+      classConfigId: classConfig.id,
       email,
       username: params.username,
       displayName: params.fullName,
@@ -444,6 +462,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   // Live data stays scoped to the authenticated account, including profile revocation.
+  const selectWorkspaceClass = (id: string) => {
+    const target = workspaceClasses.find(config => config.id === id);
+    if (!target) throw new Error('Lớp không thuộc tài khoản đang sử dụng.');
+    loadVersion.current++;
+    setStudents([]); setDisciplineLogs([]); setBehaviorCategories([]);
+    setClassConfig(target); setSelectedConfigId(id);
+  };
+
+  const createWorkspaceClass = async (name: string, year: string, start: string, ownerUid?: string) => {
+    if (!activeAccount || activeAccount.role === 'monitor' || inspectorModeClass) throw new Error('Không có quyền tạo lớp ở chế độ hiện tại.');
+    const schoolYear = validateSchoolYear(year);
+    if (!name.trim()) throw new Error('Vui lòng nhập tên lớp.');
+    if (workspaceClasses.some(config => config.className.toLowerCase() === name.trim().toLowerCase() && config.schoolYear.replace(/\s/g, '').replace('–', '-') === schoolYear)) throw new Error('Lớp trong niên khóa này đã tồn tại.');
+    const weeks = schoolWeeksFrom(start);
+    if (Number(start.slice(0, 4)) !== Number(schoolYear.slice(0, 4))) throw new Error('Ngày bắt đầu phải thuộc năm đầu của niên khóa.');
+    const owner = ownerUid && ownerUid !== activeAccount.uid
+      ? (['admin', 'owner'].includes(activeAccount.role) ? userAccounts.find(account => account.uid === ownerUid && account.isActive && account.role !== 'monitor') : undefined)
+      : activeAccount;
+    if (!owner) throw new Error('Giáo viên không hợp lệ hoặc không có quyền giao lớp.');
+    const teacherId = owner.uid;
+    const directoryId = `cls_${crypto.randomUUID()}`;
+    const id = `cfg_${directoryId}`;
+    const config: ClassConfig = { ...classConfig, id, classDirectoryId: directoryId, scopeVersion: 2, teacherId,
+      className: name.trim(), schoolYear, weeks, homeroomTeacher: owner.displayName,
+      teacherEmail: owner.email, teacherPhone: owner.phone || '',
+      classPresident: '', academicVicePresident: '', disciplineVicePresident: '', youthUnionSecretary: '', updatedAt: new Date().toISOString() };
+    const source = behaviorCategories.length ? behaviorCategories : INITIAL_BEHAVIOR_CATEGORIES;
+    const categories = source.map(category => ({ ...category, id: `cat_${id}_${crypto.randomUUID()}`, classId: id, teacherId }));
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'classConfigs', id), config);
+    const directory: SchoolClass = { id: directoryId, className: config.className, schoolYear, teacherId,
+      teacherName: owner.displayName, teacherEmail: owner.email, department: owner.department || '', studentCount: 0, averageScore: config.baseScore, topRankCount: 0, violationCount: 0 };
+    batch.set(doc(db, 'classes', directoryId), directory);
+    categories.forEach(category => batch.set(doc(db, 'behaviorCategories', category.id), category));
+    await batch.commit();
+    if (auth.currentUser?.uid !== activeAccount.uid) return;
+    if (owner.uid !== activeAccount.uid) setInspectorModeClass(directory);
+    loadVersion.current++;
+    setStudents([]); setDisciplineLogs([]); setBehaviorCategories(categories);
+    setWorkspaceClasses(prev => [...prev.filter(item => item.id !== id), config]);
+    setClassConfig(config); setSelectedConfigId(id);
+  };
+
   useEffect(() => {
     if (!currentUser || !activeAccount || currentUser.uid !== activeAccount.uid) return;
     const teacherId = activeAccount.role === 'monitor' ? activeAccount.teacherId : (inspectorModeClass?.teacherId || activeAccount.uid);
@@ -458,11 +519,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setActiveAccount(profile); setUserRole(profile.role);
     }, onError));
     const subscribe = (name: string, apply: (rows: any[]) => void) => {
-      stops.push(onSnapshot(query(collection(db, name), where('teacherId', '==', teacherId)),
+      const source = activeAccount.role === 'monitor' && ['students', 'disciplineLogs'].includes(name)
+        ? query(collection(db, name), where('teacherId', '==', teacherId), where('classId', '==', selectedConfigId || classConfig.id))
+        : query(collection(db, name), where('teacherId', '==', teacherId));
+      stops.push(onSnapshot(source,
         (snap) => { if (!disposed) apply(snap.docs.map((item) => item.data())); }, onError));
     };
-    subscribe('classConfigs', (rows) => { if (rows[0]) setClassConfig(rows[0]); });
-    subscribe('students', setStudents);
+    const scopeId = selectedConfigId || classConfig.id;
+    subscribe('classConfigs', (rows: ClassConfig[]) => {
+      const visible = activeAccount.role === 'monitor'
+        ? rows.filter(config => config.id === activeAccount.classConfigId || (!activeAccount.classConfigId && config.scopeVersion !== 2))
+        : rows;
+      setWorkspaceClasses(visible);
+      const selected = visible.find(config => config.id === scopeId)
+        || visible.find(config => config.classDirectoryId === inspectorModeClass?.id)
+        || visible.find(config => config.scopeVersion !== 2) || visible[0];
+      if (selected) { setClassConfig(selected); if (selected.id !== selectedConfigId) setSelectedConfigId(selected.id); }
+    });
+    subscribe('students', rows => { if (classConfig.id === scopeId) setStudents(rowsForClass(rows, classConfig)); });
     stops.push(onSnapshot(collection(db, 'periodLocks'), (snap) => { if (!disposed) setLockedPeriods(snap.docs.map((item) => item.data() as PeriodLockStatus)); }, onError));
     const classSource = ['admin', 'owner'].includes(activeAccount.role) ? collection(db, 'classes')
       : query(collection(db, 'classes'), where('teacherId', '==', teacherId));
@@ -475,11 +549,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setUserAccounts(['admin', 'owner'].includes(activeAccount.role) ? profiles : [activeAccount, ...profiles]);
       } }, onError));
     }
-    subscribe('behaviorCategories', setBehaviorCategories);
-    if (activeAccount.role !== 'monitor' || activeAccount.permissions?.canViewScores) subscribe('disciplineLogs', setDisciplineLogs);
+    subscribe('behaviorCategories', rows => { if (classConfig.id === scopeId) setBehaviorCategories(rowsForClass(rows, classConfig, true)); });
+    if (activeAccount.role !== 'monitor' || activeAccount.permissions?.canViewScores) subscribe('disciplineLogs', rows => { if (classConfig.id === scopeId) setDisciplineLogs(rowsForClass(rows, classConfig)); });
     else setDisciplineLogs([]);
     return () => { disposed = true; stops.forEach((stop) => stop()); };
-  }, [currentUser?.uid, activeAccount?.uid, activeAccount?.role, activeAccount?.teacherId, activeAccount?.permissions?.canViewScores, inspectorModeClass?.teacherId]);
+  }, [currentUser?.uid, activeAccount?.uid, activeAccount?.role, activeAccount?.teacherId, activeAccount?.classConfigId, activeAccount?.permissions?.canViewScores, inspectorModeClass?.teacherId, inspectorModeClass?.id, selectedConfigId, classConfig.id]);
 
   const isGoogleAuth = !!(
     currentUser &&
@@ -501,10 +575,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (!account?.isActive) throw new Error('Tài khoản chưa được cấp quyền hoặc đã bị khóa.');
       const teacherId = account.role === 'monitor' ? account.teacherId : userId;
       if (!teacherId) throw new Error('Tài khoản lớp trưởng chưa được gán giáo viên.');
-      const [config, studentsData, categories, logs, accounts, classes, locks] = await Promise.all([
-        getClassConfigFromCloud(teacherId), getStudentsFromCloud(teacherId),
+      const legacyConfig = await getClassConfigFromCloud(teacherId);
+      const config = account.role === 'monitor' && account.classConfigId ? (await getDoc(doc(db, 'classConfigs', account.classConfigId))).data() as ClassConfig : legacyConfig;
+      const monitorClassId = account.role === 'monitor' ? config?.id : undefined;
+      if (account.role === 'monitor' && !monitorClassId) throw new Error('Lớp trưởng chưa được gán lớp.');
+      const [studentsData, categories, logs, accounts, classes, locks] = await Promise.all([
+        getStudentsFromCloud(teacherId, monitorClassId),
         getBehaviorCategoriesFromCloud(teacherId),
-        account.role === 'monitor' && !account.permissions?.canViewScores ? Promise.resolve([]) : getDisciplineLogsFromCloud(teacherId),
+        account.role === 'monitor' && !account.permissions?.canViewScores ? Promise.resolve([]) : getDisciplineLogsFromCloud(teacherId, monitorClassId),
         getAllUsersFromCloud(), getAllClassesFromCloud(), getPeriodLocksFromCloud(),
       ]);
       if (version !== loadVersion.current || auth.currentUser?.uid !== userId) return;
@@ -522,7 +600,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       if (version !== loadVersion.current || auth.currentUser?.uid !== userId) return;
       if (nextConfig) setClassConfig(nextConfig);
-      setStudents(studentsData); setDisciplineLogs(logs); setBehaviorCategories(nextCategories);
+      if (nextConfig) { setSelectedConfigId(nextConfig.id); setStudents(rowsForClass(studentsData, nextConfig)); setDisciplineLogs(rowsForClass(logs, nextConfig)); setBehaviorCategories(rowsForClass(nextCategories, nextConfig, true)); }
       setUserAccounts(accounts); setSchoolClasses(classes); setLockedPeriods(locks);
     } catch (error: any) {
       if (version === loadVersion.current) setCloudSyncError(error.message || 'Không thể đồng bộ từ Firestore');
@@ -875,6 +953,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Update Class Config
   const updateClassConfig = async (updates: Partial<ClassConfig>) => {
+    if (classConfig.scopeVersion === 2 && updates.schoolYear && updates.schoolYear !== classConfig.schoolYear) throw new Error('Để chuyển niên khóa, hãy tạo lớp/niên khóa mới. Dữ liệu năm cũ được giữ riêng.');
     const updated = {
       ...classConfig,
       ...updates,
@@ -1016,6 +1095,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const teacherId = getEffectiveTeacherId();
     const newCat: BehaviorCategory = {
       ...cat,
+      classId: classConfig.id,
       id: `cat_${cat.code.toUpperCase()}_${Date.now()}`,
       teacherId,
       createdAt: new Date().toISOString(),
@@ -1073,7 +1153,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const resetBehaviorCategoriesToDefault = async () => {
     if (userRole === 'monitor') throw new Error('Lớp trưởng không được khôi phục danh mục.');
     const teacherId = getEffectiveTeacherId();
-    const categories = INITIAL_BEHAVIOR_CATEGORIES.map((category) => ({ ...category, id: `cat_${teacherId}_${category.code}`, teacherId }));
+    const categories = INITIAL_BEHAVIOR_CATEGORIES.map((category) => ({ ...category,
+      id: behaviorCategories.find(existing => existing.code === category.code)?.id || `cat_${classConfig.id}_${category.code}`, classId: classConfig.id, teacherId }));
     await Promise.all(categories.map(saveBehaviorCategoryToCloud));
     setBehaviorCategories(categories);
   };
@@ -1708,8 +1789,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         activeAccount,
         userAccounts,
         schoolClasses,
-        lockedPeriods,
+        lockedPeriods: lockedPeriods.filter(period => period.classId === classConfig.id || (!period.classId && classConfig.scopeVersion !== 2)),
         inspectorModeClass,
+        workspaceClasses,
+        selectWorkspaceClass,
+        createWorkspaceClass,
         isPeriodLocked,
         loginAsRole,
         switchAccount,

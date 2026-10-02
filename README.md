@@ -46,7 +46,7 @@ GitHub Actions xác thực bằng Workload Identity Federation, **không cần l
 
 ## Dữ liệu và quản trị
 
-Các collection hiện tại được giữ nguyên: `users`, `classes`, `classConfigs`, `students`, `behaviorCategories`, `disciplineLogs`, `periodLocks`. Dữ liệu lớp gắn với `teacherId` bằng Firebase Auth UID. Hồ sơ lớp trưởng có `teacherId` trỏ tới giáo viên của mình. Hiện hỗ trợ một lớp làm việc chính cho mỗi giáo viên; mô hình nhiều trường và nhiều giáo viên đồng quản lý một lớp cần một đợt chuyển đổi riêng.
+Các collection hiện tại được giữ nguyên: `users`, `classes`, `classConfigs`, `students`, `behaviorCategories`, `disciplineLogs`, `periodLocks`. Dữ liệu lớp gắn với `teacherId` bằng Firebase Auth UID. Hồ sơ lớp trưởng có `teacherId` trỏ tới giáo viên của mình. Giáo viên có thể tạo nhiều lớp/niên khóa với sổ riêng theo classConfig ID. Xem CLASS_WORKSPACES.md. Dữ liệu cũ được giữ nguyên; mô hình nhiều trường và nhiều giáo viên đồng quản lý một lớp chưa được bổ sung.
 
 Quản trị viên đầu tiên được cấp qua Firebase Console/Admin API: tạo hoặc đăng nhập tài khoản Auth, lấy UID và đặt `users/{UID}.role` thành `admin` hoặc `owner`, `isActive` thành `true`. Thao tác này chỉ dành cho người có quyền quản trị Firebase project. Không dùng tên email để tự cấp quyền trong trình duyệt.
 

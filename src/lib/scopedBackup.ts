@@ -2,7 +2,8 @@ import type { Student, DisciplineLog, BehaviorCategory, ClassConfig } from '../t
 
 // Imported document IDs belong to the recipient UID; references stay consistent.
 export function scopeBackup(data: { students: Student[]; disciplineLogs: DisciplineLog[]; behaviorCategories?: BehaviorCategory[]; classConfig?: ClassConfig }, teacherId: string, actorId: string, currentConfig: ClassConfig) {
-  const ownedId = (id: string) => id.startsWith(`${teacherId}__`) ? id : `${teacherId}__${id}`;
+  const prefix = currentConfig.scopeVersion === 2 ? `${teacherId}__${currentConfig.id}__` : `${teacherId}__`;
+  const ownedId = (id: string) => id.startsWith(prefix) ? id : `${prefix}${id}`;
   const classId = currentConfig.id || `cfg_${teacherId}`;
   const students = data.students.map((student) => ({ ...student, id: ownedId(student.id), teacherId, classId }));
   const studentIds = new Set(students.map((student) => student.id));
@@ -13,7 +14,7 @@ export function scopeBackup(data: { students: Student[]; disciplineLogs: Discipl
   });
   return {
     students, disciplineLogs,
-    behaviorCategories: (data.behaviorCategories || []).map((category) => ({ ...category, id: ownedId(category.id), teacherId })),
-    classConfig: { ...currentConfig, ...data.classConfig, id: classId, teacherId },
+    behaviorCategories: (data.behaviorCategories || []).map((category) => ({ ...category, id: ownedId(category.id), teacherId, classId })),
+    classConfig: { ...currentConfig, ...data.classConfig, id: classId, teacherId, scopeVersion: currentConfig.scopeVersion, classDirectoryId: currentConfig.classDirectoryId, schoolYear: currentConfig.schoolYear },
   };
 }

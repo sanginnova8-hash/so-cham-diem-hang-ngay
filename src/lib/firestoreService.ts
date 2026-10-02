@@ -31,6 +31,7 @@ export async function saveUserToCloud(user: UserAccount): Promise<void> {
         uid: user.uid,
         email: user.email,
         username: user.username || '',
+        classConfigId: user.classConfigId || '',
         displayName: user.displayName,
         role: user.role,
         assignedClassId: user.assignedClassId,
@@ -147,7 +148,8 @@ export async function getClassConfigFromCloud(teacherId: string): Promise<ClassC
     const q = query(collection(db, 'classConfigs'), where('teacherId', '==', teacherId));
     const snap = await getDocs(q);
     if (!snap.empty) {
-      return snap.docs[0].data() as ClassConfig;
+      const configs = snap.docs.map(item => item.data() as ClassConfig);
+      return configs.find(config => config.scopeVersion !== 2) || configs.sort((a, b) => a.id.localeCompare(b.id))[0];
     }
     return null;
   } catch (error) {
@@ -189,10 +191,10 @@ export async function deleteStudentFromCloud(studentId: string): Promise<void> {
   }
 }
 
-export async function getStudentsFromCloud(teacherId: string): Promise<Student[]> {
+export async function getStudentsFromCloud(teacherId: string, classId?: string): Promise<Student[]> {
   const path = 'students';
   try {
-    const q = query(collection(db, 'students'), where('teacherId', '==', teacherId));
+    const q = classId ? query(collection(db, 'students'), where('teacherId', '==', teacherId), where('classId', '==', classId)) : query(collection(db, 'students'), where('teacherId', '==', teacherId));
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as Student);
   } catch (error) {
@@ -226,10 +228,10 @@ export async function deleteDisciplineLogFromCloud(logId: string): Promise<void>
   }
 }
 
-export async function getDisciplineLogsFromCloud(teacherId: string): Promise<DisciplineLog[]> {
+export async function getDisciplineLogsFromCloud(teacherId: string, classId?: string): Promise<DisciplineLog[]> {
   const path = 'disciplineLogs';
   try {
-    const q = query(collection(db, 'disciplineLogs'), where('teacherId', '==', teacherId));
+    const q = classId ? query(collection(db, 'disciplineLogs'), where('teacherId', '==', teacherId), where('classId', '==', classId)) : query(collection(db, 'disciplineLogs'), where('teacherId', '==', teacherId));
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as DisciplineLog);
   } catch (error) {
@@ -267,13 +269,14 @@ export async function getBehaviorCategoriesFromCloud(teacherId: string): Promise
 
 // ======================== PERIOD LOCKS ========================
 export async function savePeriodLockToCloud(lock: PeriodLockStatus): Promise<void> {
-  const id = `${lock.periodType}_${lock.periodValue}`;
+  const id = `${lock.classId ? lock.classId + '__' : ''}${lock.periodType}_${lock.periodValue}`;
   const path = `periodLocks/${id}`;
   try {
     await setDoc(
       doc(db, 'periodLocks', id),
       {
         id,
+        classId: lock.classId || '',
         periodType: lock.periodType,
         periodValue: lock.periodValue,
         isLocked: lock.isLocked,
@@ -297,6 +300,7 @@ export async function getPeriodLocksFromCloud(): Promise<PeriodLockStatus[]> {
       const data = d.data();
       return {
         periodType: data.periodType,
+        classId: data.classId || undefined,
         periodValue: data.periodValue,
         isLocked: data.isLocked,
         lockedAt: data.lockedAt,

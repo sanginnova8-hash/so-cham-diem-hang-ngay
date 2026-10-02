@@ -6,6 +6,25 @@ let env;
 const profile = (uid, role = 'teacher', extra = {}) => ({ uid, role, isActive: true, teacherId: '', ...extra });
 const dbFor = (uid, provider = 'password') => env.authenticatedContext(uid, { firebase: { sign_in_provider: provider } }).firestore();
 const log = (teacherId, createdBy, extra = {}) => ({ teacherId, createdBy, studentId: `student-${teacherId}`, classId: `cfg-${teacherId}`, type: 'deduct', weekNumber: 1, month: 9, count: 1, scorePerUnit: 1, totalScore: 1, ...extra });
+test('class-scoped locks and monitors do not cross into another year', async () => {
+  await env.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    for (const id of ['year-a', 'year-b']) {
+      await setDoc(doc(db, 'classConfigs', id), { teacherId: 'a', scopeVersion: 2, schoolYear: '2026-2027', classDirectoryId: id, semester1Months: [9, 10, 11, 12, 1] });
+      await setDoc(doc(db, 'students', id), { teacherId: 'a', classId: id });
+    }
+    await setDoc(doc(db, 'users', 'scoped-monitor'), profile('scoped-monitor', 'monitor', { teacherId: 'a', classConfigId: 'year-a', permissions: { canAddViolations: true, canAddBonuses: true, canViewScores: true } }));
+  });
+  await assertSucceeds(getDoc(doc(dbFor('scoped-monitor'), 'students', 'year-a')));
+  await assertFails(getDoc(doc(dbFor('scoped-monitor'), 'students', 'year-b')));
+  await assertSucceeds(getDocs(query(collection(dbFor('scoped-monitor'), 'students'), where('teacherId', '==', 'a'), where('classId', '==', 'year-a'))));
+  await assertFails(getDoc(doc(dbFor('monitor'), 'students', 'year-b')));
+  await assertSucceeds(setDoc(doc(dbFor('admin'), 'periodLocks', 'year-a__week_1'), { isLocked: true, classId: 'year-a' }));
+  await assertFails(setDoc(doc(dbFor('a'), 'disciplineLogs', 'blocked-year'), log('a', 'a', { classId: 'year-a', studentId: 'year-a' })));
+  await assertSucceeds(setDoc(doc(dbFor('a'), 'disciplineLogs', 'open-year'), log('a', 'a', { classId: 'year-b', studentId: 'year-b' })));
+  await assertSucceeds(updateDoc(doc(dbFor('a'), 'disciplineLogs', 'open-year'), { weekNumber: 2, month: 10 }));
+  await assertFails(updateDoc(doc(dbFor('a'), 'classConfigs', 'year-a'), { schoolYear: '2027-2028' }));
+});
 test('log totals must match unit score and integer count', async () => {
   await assertFails(setDoc(doc(dbFor('a'), 'disciplineLogs', 'forged-total'), log('a', 'a', { totalScore: 100 })));
   await assertFails(setDoc(doc(dbFor('a'), 'disciplineLogs', 'fractional-count'), log('a', 'a', { count: 1.5, totalScore: 1.5 })));

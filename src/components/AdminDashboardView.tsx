@@ -50,7 +50,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
     exportFullBackupJson,
     deleteSchoolClass,
     purgeOrphanedClasses,
-    addSchoolClass,
+    createWorkspaceClass,
   } = useApp();
 
   const [activeAdminSubTab, setActiveAdminSubTab] = useState<'ranking' | 'teachers' | 'locking' | 'system'>('ranking');
@@ -65,7 +65,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
   const [newClassForm, setNewClassForm] = useState({
     className: '',
     department: 'Khoa Điện - Điện tử',
-    schoolYear: '2025 - 2026',
+    schoolYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
     teacherId: '',
   });
 
@@ -147,41 +147,21 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
     e.preventDefault();
     if (!newClassForm.className.trim()) return;
 
-    const classId = 'cls_' + Date.now();
-    const assignedTeacher = userAccounts.find((u) => u.uid === newClassForm.teacherId);
-
-    const newClassItem: SchoolClass = {
-      id: classId,
-      className: newClassForm.className.trim(),
-      department: newClassForm.department.trim() || 'Khoa Điện - Điện tử',
-      schoolYear: newClassForm.schoolYear || '2025 - 2026',
-      teacherId: assignedTeacher ? assignedTeacher.uid : activeAccount!.uid,
-      teacherName: assignedTeacher ? assignedTeacher.displayName : activeAccount!.displayName,
-      teacherEmail: assignedTeacher ? assignedTeacher.email : activeAccount!.email,
-      studentCount: 0,
-      averageScore: 10,
-      topRankCount: 0,
-      violationCount: 0,
-    };
-
-    try { await addSchoolClass(newClassItem); } catch (error) { setClassFeedback('Không lưu được lớp: ' + String(error)); return; }
-
-    if (assignedTeacher) {
-      updateUserAccount(assignedTeacher.uid, {
-        assignedClassId: classId,
-        assignedClassName: newClassItem.className,
-      });
-    }
-
+    const assignedTeacher = userAccounts.find(user => user.uid === newClassForm.teacherId);
+    try {
+      const firstYear = newClassForm.schoolYear.match(/\d{4}/)?.[0] || String(new Date().getFullYear());
+      await createWorkspaceClass(newClassForm.className, newClassForm.schoolYear, `${firstYear}-09-01`, assignedTeacher?.uid);
+    } catch (error) { setClassFeedback('Không tạo được lớp: ' + String(error)); return; }
+    const createdName = newClassForm.className;
     setIsAddClassModalOpen(false);
     setNewClassForm({
       className: '',
       department: 'Khoa Điện - Điện tử',
-      schoolYear: '2025 - 2026',
+      schoolYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
       teacherId: '',
     });
     setClassFeedback(
-      `Đã tạo thành công lớp "${newClassItem.className}"${
+      `Đã tạo thành công lớp "${createdName}"${
         assignedTeacher ? ` và phân công cho ${assignedTeacher.displayName}` : ''
       }!`
     );

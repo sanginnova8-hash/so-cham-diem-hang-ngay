@@ -3,6 +3,7 @@ import { AppProvider, useApp } from './context/AppContext';
 import { TabType } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
+import { ClassWorkspaceSwitcher } from './components/ClassWorkspaceSwitcher';
 import { DashboardView } from './components/DashboardView';
 import { DailyLogView } from './components/DailyLogView';
 import { WeeklySummaryView } from './components/WeeklySummaryView';
@@ -137,7 +138,8 @@ function MainApp() {
         />
 
         {/* Main Content Area */}
-        <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-5 pb-24 md:pb-8">
+        <ClassWorkspaceSwitcher />
+        <main key={classConfig.id} className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-5 pb-24 md:pb-8">
           {/* Level 1: Public Guest Portal */}
           {(userRole === 'guest' || activeTab === 'portal') && (
             <PublicPortalView onOpenLoginModal={() => setIsLoginModalOpen(true)} />

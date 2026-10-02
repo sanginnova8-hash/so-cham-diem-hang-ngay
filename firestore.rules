@@ -12,6 +12,10 @@ service cloud.firestore {
     function teacher() { return active() && profile().role == 'teacher'; }
     function ownData(data) { return active() && data.teacherId == request.auth.uid && profile().role != 'monitor'; }
     function monitorData(data) { return active() && profile().role == 'monitor' && data.teacherId == profile().teacherId; }
+    function monitorClass(data) {
+      return monitorData(data) && (data.classId == profile().get('classConfigId', '')
+        || (profile().get('classConfigId', '') == '' && get(/databases/$(database)/documents/classConfigs/$(data.classId)).data.get('scopeVersion', 1) != 2));
+    }
     function readable(data) { return admin() || ownData(data) || monitorData(data); }
     function writable(data) { return admin() || ownData(data); }
     function stableOwner() { return request.resource.data.teacherId == resource.data.teacherId; }
@@ -24,6 +28,13 @@ service cloud.firestore {
       let id = type + '_' + string(value);
       return !exists(/databases/$(database)/documents/periodLocks/$(id))
         || get(/databases/$(database)/documents/periodLocks/$(id)).data.isLocked != true;
+    }
+    function classUnlocked(type, value, classId) {
+      let id = classId + '__' + type + '_' + string(value);
+      let config = get(/databases/$(database)/documents/classConfigs/$(classId)).data;
+      return config.get('scopeVersion', 1) == 2
+        ? (!exists(/databases/$(database)/documents/periodLocks/$(id)) || get(/databases/$(database)/documents/periodLocks/$(id)).data.isLocked != true)
+        : unlocked(type, value);
     }
     function validLog() {
       let log = request.resource.data;
@@ -40,11 +51,11 @@ service cloud.firestore {
     }
     function semesterOpen(data) {
       let config = get(/databases/$(database)/documents/classConfigs/$(data.classId)).data;
-      return config.semester1Months.hasAny([data.month]) ? unlocked('semester', 1) : unlocked('semester', 2);
+      return config.semester1Months.hasAny([data.month]) ? classUnlocked('semester', 1, data.classId) : classUnlocked('semester', 2, data.classId);
     }
-    function logOpen() { return unlocked('week', request.resource.data.weekNumber) && unlocked('month', request.resource.data.month) && semesterOpen(request.resource.data); }
+    function logOpen() { return classUnlocked('week', request.resource.data.weekNumber, request.resource.data.classId) && classUnlocked('month', request.resource.data.month, request.resource.data.classId) && semesterOpen(request.resource.data); }
     function monitorCanRecord(data) {
-      return monitorData(data) && ((data.type == 'deduct' && profile().permissions.canAddViolations == true)
+      return monitorClass(data) && ((data.type == 'deduct' && profile().permissions.canAddViolations == true)
         || (data.type == 'bonus' && profile().permissions.canAddBonuses == true));
     }
     match /users/{uid} {
@@ -59,7 +70,8 @@ service cloud.firestore {
         || (request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['displayName', 'phone', 'avatarUrl', 'lastLoginAt', 'updatedAt']))
         || (managesMonitor(resource.data) && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['displayName', 'phone', 'permissions', 'isActive', 'updatedAt', 'lastLoginAt'])));
+          .hasOnly(['displayName', 'phone', 'permissions', 'isActive', 'updatedAt', 'lastLoginAt', 'classConfigId'])
+          && (request.resource.data.get('classConfigId', '') == '' || get(/databases/$(database)/documents/classConfigs/$(request.resource.data.classConfigId)).data.teacherId == request.auth.uid)));
       allow delete: if admin() || managesMonitor(resource.data);
     }
     match /classes/{id} {
@@ -69,22 +81,27 @@ service cloud.firestore {
       allow delete: if writable(resource.data);
     }
     match /{collection}/{id} {
-      allow read: if collection in ['students', 'classConfigs', 'behaviorCategories', 'weeklySnapshots', 'monthlySummaries', 'semesterSummaries', 'parentReports'] && readable(resource.data);
+      allow read: if collection in ['students', 'classConfigs', 'behaviorCategories', 'weeklySnapshots', 'monthlySummaries', 'semesterSummaries', 'parentReports']
+        && (collection in ['classConfigs', 'behaviorCategories'] ? readable(resource.data)
+          : (admin() || ownData(resource.data) || monitorClass(resource.data)));
       allow create: if collection in ['students', 'classConfigs', 'behaviorCategories', 'weeklySnapshots', 'monthlySummaries', 'semesterSummaries', 'parentReports'] && writable(request.resource.data);
-      allow update: if collection in ['students', 'classConfigs', 'behaviorCategories', 'weeklySnapshots', 'monthlySummaries', 'semesterSummaries', 'parentReports'] && writable(resource.data) && stableOwner();
+      allow update: if collection in ['students', 'classConfigs', 'behaviorCategories', 'weeklySnapshots', 'monthlySummaries', 'semesterSummaries', 'parentReports'] && writable(resource.data) && stableOwner()
+        && (collection != 'classConfigs' || resource.data.get('scopeVersion', 1) != 2
+          || (request.resource.data.scopeVersion == 2 && request.resource.data.schoolYear == resource.data.schoolYear
+            && request.resource.data.classDirectoryId == resource.data.classDirectoryId));
       allow delete: if collection in ['students', 'classConfigs', 'behaviorCategories', 'weeklySnapshots', 'monthlySummaries', 'semesterSummaries', 'parentReports'] && writable(resource.data);
     }
     match /disciplineLogs/{id} {
-      allow read: if admin() || ownData(resource.data) || (monitorData(resource.data) && profile().permissions.canViewScores == true);
+      allow read: if admin() || ownData(resource.data) || (monitorClass(resource.data) && profile().permissions.canViewScores == true);
       allow create: if validLog() && logOpen() && request.resource.data.createdBy == request.auth.uid
         && (writable(request.resource.data) || monitorCanRecord(request.resource.data));
-      allow update: if validLog() && logOpen() && unlocked('week', resource.data.weekNumber)
-        && unlocked('month', resource.data.month) && semesterOpen(resource.data) && stableOwner()
+      allow update: if validLog() && logOpen() && classUnlocked('week', resource.data.weekNumber, resource.data.classId)
+        && classUnlocked('month', resource.data.month, resource.data.classId) && semesterOpen(resource.data) && stableOwner()
         && request.resource.data.studentId == resource.data.studentId
         && request.resource.data.classId == resource.data.classId
         && request.resource.data.get('createdBy', '') == resource.data.get('createdBy', '')
         && (writable(resource.data) || (monitorCanRecord(request.resource.data) && resource.data.createdBy == request.auth.uid));
-      allow delete: if writable(resource.data) && unlocked('week', resource.data.weekNumber) && unlocked('month', resource.data.month) && semesterOpen(resource.data);
+      allow delete: if writable(resource.data) && classUnlocked('week', resource.data.weekNumber, resource.data.classId) && classUnlocked('month', resource.data.month, resource.data.classId) && semesterOpen(resource.data);
     }
     match /periodLocks/{id} { allow read: if active(); allow write: if admin(); }
     match /auditLogs/{id} {

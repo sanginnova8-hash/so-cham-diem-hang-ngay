@@ -11,6 +11,7 @@ export interface UserAccount {
   email: string;
   username?: string;
   teacherId?: string; // Immutable owner of a monitor account's data scope.
+  classConfigId?: string;
   displayName: string;
   role: UserRole;
   assignedClassId: string;
@@ -45,6 +46,7 @@ export interface SchoolClass {
 }
 
 export interface PeriodLockStatus {
+  classId?: string;
   periodType: 'week' | 'month' | 'semester';
   periodValue: number; // weekNumber (1-35) or month (1-12) or semester (1-2)
   isLocked: boolean;
@@ -76,6 +78,7 @@ export interface Student {
 }
 
 export interface BehaviorCategory {
+  classId?: string;
   id: string;
   code: string;
   name: string;
@@ -149,6 +152,8 @@ export interface SchoolWeek {
 }
 
 export interface ClassConfig {
+  scopeVersion?: 2;
+  classDirectoryId?: string;
   id: string;
   className: string;
   schoolYear: string;
