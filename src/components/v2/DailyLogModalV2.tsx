@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
   Check,
@@ -86,6 +86,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
   const [selectedCategory, setSelectedCategory] = useState<BehaviorCategory | null>(null);
   const [customDescription, setCustomDescription] = useState<string>('');
   const [customScore, setCustomScore] = useState<number>(1);
+  const [hasCustomScore, setHasCustomScore] = useState(false);
   const [count, setCount] = useState<number>(1);
 
   // Bulk Confirmation Dialog
@@ -93,6 +94,21 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // The dialog stays mounted between entries. Follow live catalog updates,
+  // including changes received from another device, instead of retaining a copy.
+  useEffect(() => {
+    if (!selectedCategory) return;
+    const latest = behaviorCategories.find((category) => category.id === selectedCategory.id && category.isActive);
+    if (!latest) {
+      setSelectedCategory(null);
+      setHasCustomScore(false);
+      setErrorMessage('Hành vi đã bị xóa hoặc ngừng sử dụng. Vui lòng chọn lại.');
+      return;
+    }
+    if (latest !== selectedCategory) setSelectedCategory(latest);
+    if (!hasCustomScore) setCustomScore(latest.defaultScore);
+  }, [behaviorCategories, selectedCategory, hasCustomScore]);
 
   // Check period lock
   const isLocked = isPeriodLocked('week', selectedWeek);
@@ -111,6 +127,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
   // Categories filtered
   const filteredCategories = useMemo(() => {
     return behaviorCategories.filter((c) => {
+      if (!c.isActive) return false;
       if (c.type !== categoryType) return false;
       if (categoryGroupFilter !== 'all' && c.group !== categoryGroupFilter) return false;
       return true;
@@ -152,6 +169,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
   // Select category
   const handleSelectCategory = (cat: BehaviorCategory) => {
     setSelectedCategory(cat);
+    setHasCustomScore(false);
     setCustomScore(cat.defaultScore);
     setCustomDescription('');
   };
@@ -650,7 +668,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
                 min="0.5"
                 max="10"
                 value={customScore}
-                onChange={(e) => setCustomScore(Number(e.target.value))}
+                onChange={(e) => { setHasCustomScore(true); setCustomScore(Number(e.target.value)); }}
                 className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono font-bold text-sm"
               />
             </div>
