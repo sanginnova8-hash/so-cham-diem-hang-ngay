@@ -39,6 +39,7 @@ import { PWAInstallButton } from './PWAInstallButton';
 import { formatVietnameseDate, formatVietnameseNumber } from '../lib/utils';
 import { BehaviorCategory, AchievementBonusRule } from '../types';
 import { ClassMonitorManagementCard } from './v2/ClassMonitorManagementCard';
+import { defaultWeekOneStart, schoolWeeksFrom } from '../lib/classScope';
 
 export const SettingsBackupView: React.FC = () => {
   const {
@@ -79,6 +80,7 @@ export const SettingsBackupView: React.FC = () => {
 
   const [className, setClassName] = useState(classConfig.className || '');
   const [schoolYear, setSchoolYear] = useState(classConfig.schoolYear || '');
+  const [weekOneStart, setWeekOneStart] = useState(classConfig.weeks[0]?.startDate || defaultWeekOneStart(classConfig.schoolYear));
   const [schoolName, setSchoolName] = useState(classConfig.schoolName || '');
   const [grade, setGrade] = useState(classConfig.grade || '');
   const [roomNumber, setRoomNumber] = useState(classConfig.roomNumber || '');
@@ -103,6 +105,7 @@ export const SettingsBackupView: React.FC = () => {
 
     setClassName(classConfig.className || '');
     setSchoolYear(classConfig.schoolYear || '');
+    setWeekOneStart(classConfig.weeks[0]?.startDate || defaultWeekOneStart(classConfig.schoolYear));
     setSchoolName(classConfig.schoolName || '');
     setGrade(classConfig.grade || '');
     setRoomNumber(classConfig.roomNumber || '');
@@ -138,7 +141,10 @@ export const SettingsBackupView: React.FC = () => {
       return;
     }
 
+    try {
+    const weeks = schoolWeeksFrom(weekOneStart, classConfig.weeks.length || 35).map((week, index) => ({ ...week, semester: classConfig.weeks[index]?.semester ?? week.semester }));
     await updateClassConfig({
+      ...(weekOneStart !== classConfig.weeks[0]?.startDate ? { weeks } : {}),
       homeroomTeacher: homeroomTeacher.trim(),
       teacherPhone: teacherPhone.trim(),
       teacherEmail: teacherEmail.trim(),
@@ -162,6 +168,9 @@ export const SettingsBackupView: React.FC = () => {
     });
     setConfigSaved(true);
     setTimeout(() => setConfigSaved(false), 3000);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Không thể lưu cài đặt.');
+    }
   };
 
   const handleExportJson = () => {
@@ -430,6 +439,15 @@ export const SettingsBackupView: React.FC = () => {
               </div>
             </div>
 
+            <div className="p-4 bg-slate-50 dark:bg-slate-750/70 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+              <label className="block font-semibold" htmlFor="week-one-start">Ngày bắt đầu Tuần 1</label>
+              <div className="flex flex-wrap gap-2">
+                <input id="week-one-start" required type="date" value={weekOneStart} onChange={event => { setWeekOneStart(event.target.value); setConfigSaved(false); }} className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800" />
+                <button type="button" onClick={() => { try { setWeekOneStart(defaultWeekOneStart(schoolYear)); setConfigSaved(false); } catch (error) { alert(error instanceof Error ? error.message : String(error)); } }} className="px-3 py-2 rounded-xl border border-blue-300 text-blue-600">Dùng mặc định theo ngày 5/9</button>
+              </div>
+              <p className="text-xs text-slate-500">Mặc định bắt đầu vào thứ Hai của tuần chứa 5/9. Nếu 5/9 là thứ Sáu, thứ Bảy hoặc Chủ nhật, dùng thứ Hai tuần tiếp theo. Các tuần sau kéo dài 7 ngày.</p>
+              <p className="text-xs text-slate-500">Nhấn Lưu cài đặt để áp dụng cho lớp hiện tại. Các điểm đã ghi nhận giữ nguyên số tuần.</p>
+            </div>
             {/* SECTION 2: CLASS & SCHOOL INFORMATION */}
             <div className="p-4 bg-slate-50 dark:bg-slate-750/70 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
               <h4 className="font-bold text-slate-800 dark:text-slate-200 text-xs uppercase tracking-wider flex items-center gap-1.5 text-blue-600 dark:text-blue-400">

@@ -96,6 +96,12 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const week = classConfig.weeks.find(item => item.startDate <= eventDate && eventDate <= item.endDate);
+    if (week) setSelectedWeek(week.weekNumber);
+  }, [isOpen, eventDate, classConfig.weeks]);
+
   // The dialog stays mounted between entries. Follow live catalog updates,
   // including changes received from another device, instead of retaining a copy.
   useEffect(() => {

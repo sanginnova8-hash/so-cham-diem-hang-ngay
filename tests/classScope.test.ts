@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rowsForClass, schoolWeeksFrom, validateSchoolYear } from '../src/lib/classScope';
+import { rowsForClass, schoolWeeksFrom, validateSchoolYear, defaultWeekOneStart } from '../src/lib/classScope';
 import { scopeBackup } from '../src/lib/scopedBackup';
 import { INITIAL_CLASS_CONFIG } from '../src/data/initialData';
 
@@ -21,6 +21,16 @@ test('validate year and build a calendar from the requested start date', () => {
   assert.equal(weeks.length, 35); assert.equal(weeks[0].startDate, '2026-09-01');
   assert.equal(weeks[0].endDate, '2026-09-07'); assert.equal(weeks[1].startDate, '2026-09-08');
   assert.equal(weeks[34].startDate, '2027-04-27');
+});
+
+test('week one starts on the containing Monday for Mon–Thu and next Monday for Fri–Sun', () => {
+  const expected = [[2022,'2022-09-05'],[2023,'2023-09-04'],[2029,'2029-09-03'],[2024,'2024-09-02'],[2025,'2025-09-08'],[2026,'2026-09-07'],[2027,'2027-09-06']] as const;
+  for (const [year, start] of expected) {
+    assert.equal(defaultWeekOneStart(`${year}–${year+1}`), start);
+    const weeks = schoolWeeksFrom(start);
+    assert.equal(new Date(`${weeks[0].startDate}T12:00:00`).getDay(),1);
+    assert.equal(new Date(`${weeks[0].endDate}T12:00:00`).getDay(),0);
+  }
 });
 test('restoring same backup into two years does not overwrite document IDs', () => {
   const student: any = { id: 's', classId: 'old', teacherId: 't' };

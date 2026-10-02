@@ -1,32 +1,10 @@
+import { defaultWeekOneStart, schoolWeeksFrom } from '../lib/classScope';
 import { AchievementBonusRule, BehaviorCategory, ClassConfig, DisciplineLog, SchoolWeek, Student } from '../types';
 
 export const INITIAL_TEACHER_ID = 'teacher_sang_10a8';
 
-// Generate 35 weeks for the school year 2026-2027 starting from Monday Sep 01, 2026
-export function generateSchoolWeeks(): SchoolWeek[] {
-  const weeks: SchoolWeek[] = [];
-  // Start Monday September 1, 2026 (or nearby Monday: Aug 31 / Sep 7)
-  const startDate = new Date('2026-09-01T00:00:00');
-  
-  for (let i = 1; i <= 35; i++) {
-    const wStart = new Date(startDate);
-    wStart.setDate(startDate.getDate() + (i - 1) * 7);
-    const wEnd = new Date(wStart);
-    wEnd.setDate(wStart.getDate() + 6);
-
-    const month = wStart.getMonth() + 1;
-    const semester = i <= 19 ? 1 : 2;
-
-    weeks.push({
-      weekNumber: i,
-      startDate: wStart.toISOString().split('T')[0],
-      endDate: wEnd.toISOString().split('T')[0],
-      semester,
-      month,
-      title: `Tuần ${i} (T${month})`,
-    });
-  }
-  return weeks;
+export function generateSchoolWeeks(year = 2025): SchoolWeek[] {
+  return schoolWeeksFrom(defaultWeekOneStart(year));
 }
 
 export const DEFAULT_ACHIEVEMENT_RULES: AchievementBonusRule[] = [

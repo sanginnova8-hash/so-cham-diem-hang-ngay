@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { defaultWeekOneStart } from '../lib/classScope';
 import {
   ShieldCheck,
   Users,
@@ -149,8 +150,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
 
     const assignedTeacher = userAccounts.find(user => user.uid === newClassForm.teacherId);
     try {
-      const firstYear = newClassForm.schoolYear.match(/\d{4}/)?.[0] || String(new Date().getFullYear());
-      await createWorkspaceClass(newClassForm.className, newClassForm.schoolYear, `${firstYear}-09-01`, assignedTeacher?.uid);
+      await createWorkspaceClass(newClassForm.className, newClassForm.schoolYear, defaultWeekOneStart(newClassForm.schoolYear), assignedTeacher?.uid);
     } catch (error) { setClassFeedback('Không tạo được lớp: ' + String(error)); return; }
     const createdName = newClassForm.className;
     setIsAddClassModalOpen(false);

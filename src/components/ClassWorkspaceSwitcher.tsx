@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { defaultWeekOneStart } from '../lib/classScope';
 
 export function ClassWorkspaceSwitcher() {
   const { userRole, classConfig, workspaceClasses, selectWorkspaceClass, createWorkspaceClass, inspectorModeClass } = useApp();
@@ -7,7 +8,7 @@ export function ClassWorkspaceSwitcher() {
   const [name, setName] = useState('');
   const year = new Date().getFullYear();
   const [schoolYear, setSchoolYear] = useState(`${year}-${year + 1}`);
-  const [start, setStart] = useState(`${year}-09-01`);
+  const [start, setStart] = useState(defaultWeekOneStart(year));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   if (userRole === 'guest') return null;
@@ -27,7 +28,7 @@ export function ClassWorkspaceSwitcher() {
       finally { setBusy(false); }
     }}>
       <label className="text-xs">Tên lớp<input required value={name} onChange={event => setName(event.target.value)} placeholder="Ví dụ: 10A8" className="block w-full mt-1 border rounded-lg p-2" /></label>
-      <label className="text-xs">Niên khóa<input required value={schoolYear} onChange={event => setSchoolYear(event.target.value)} placeholder="2026-2027" className="block w-full mt-1 border rounded-lg p-2" /></label>
+      <label className="text-xs">Niên khóa<input required value={schoolYear} onChange={event => { setSchoolYear(event.target.value); try { setStart(defaultWeekOneStart(event.target.value)); } catch { /* Wait for a complete school year. */ } }} placeholder="2026-2027" className="block w-full mt-1 border rounded-lg p-2" /></label>
       <label className="text-xs">Ngày bắt đầu tuần 1<input required type="date" value={start} onChange={event => setStart(event.target.value)} className="block w-full mt-1 border rounded-lg p-2" /></label>
       <p className="sm:col-span-3 text-xs text-slate-500">Lớp mới bắt đầu với danh sách học sinh và nhật ký trống, sao chép biểu điểm hiện tại. Lớp cũ vẫn được giữ để tra cứu. Có thể chỉnh lịch tuần trong Cài đặt.</p>
       {error && <p role="alert" className="sm:col-span-3 text-sm text-red-600">{error}</p>}

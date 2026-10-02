@@ -22,6 +22,16 @@ export function schoolWeeksFrom(start: string, count = 35): SchoolWeek[] {
   });
 }
 
+export function defaultWeekOneStart(schoolYear: string | number): string {
+  const year = typeof schoolYear === 'number' ? schoolYear : Number(validateSchoolYear(schoolYear).slice(0, 4));
+  if (!Number.isInteger(year) || year < 1900 || year > 9998) throw new Error('Năm học không hợp lệ.');
+  const septemberFifth = new Date(year, 8, 5, 12);
+  const weekday = septemberFifth.getDay();
+  const mondayOffset = weekday === 0 ? 1 : weekday >= 5 ? 8 - weekday : 1 - weekday;
+  septemberFifth.setDate(5 + mondayOffset);
+  return localDateString(septemberFifth);
+}
+
 export function validateSchoolYear(year: string): string {
   const match = year.trim().match(/^(\d{4})\s*[-–]\s*(\d{4})$/);
   if (!match || Number(match[2]) !== Number(match[1]) + 1) throw new Error('Niên khóa cần có dạng 2026-2027, gồm hai năm liên tiếp.');
