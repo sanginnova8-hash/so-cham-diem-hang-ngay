@@ -26,6 +26,8 @@ import {
   MessageSquareText,
   Users,
   UserX,
+  TableProperties,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { DisciplineLog } from '../types';
@@ -37,6 +39,8 @@ import {
   compareVietnameseNames,
   compareStudentCodes,
 } from '../lib/utils';
+import { ConductSheetTable, ConductSheetRow } from './ConductSheetTable';
+import { getStudentConductDetail } from '../lib/conductReportHelper';
 import { TabType } from './Navbar';
 import { SummaryZaloExportModal } from './SummaryZaloExportModal';
 import { PeriodLockBannerV2 } from './v2/PeriodLockBannerV2';
@@ -80,6 +84,7 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
   const [rankFilter, setRankFilter] = useState<string>('all');
   const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'unexcused' | 'excused' | 'any'>('all');
   const [isZaloModalOpen, setIsZaloModalOpen] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<'management' | 'conduct-sheet'>('management');
 
   // Modals for monthly achievement awards
   const [isAutoMonthlyAwardModalOpen, setIsAutoMonthlyAwardModalOpen] = useState(false);
@@ -201,6 +206,48 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
       return compareVietnameseNames(a, b, 'asc');
     });
   }, [monthlyData, rankFilter, attendanceFilter, sortField, sortDirection]);
+
+  // Logs for current month to extract violations and bonuses
+  const monthLogs = useMemo(() => {
+    return disciplineLogs.filter((l) => l.month === selectedMonth);
+  }, [disciplineLogs, selectedMonth]);
+
+  // Conduct sheet rows matching the traditional 5-column template
+  const conductRows: ConductSheetRow[] = useMemo(() => {
+    return filteredData.map((s, idx) => {
+      const detail = getStudentConductDetail(s.studentId, monthLogs);
+      return {
+        stt: idx + 1,
+        studentId: s.studentId,
+        studentCode: s.studentCode,
+        fullName: s.fullName,
+        finalScore: s.finalScore,
+        violationsLines: detail.violationsLines,
+        bonusesList: detail.bonusesList,
+      };
+    });
+  }, [filteredData, monthLogs]);
+
+  // Export Excel in traditional conduct sheet format
+  const handleExportConductSheetExcel = () => {
+    const exportRows = conductRows.map((r) => ({
+      'TT': r.stt,
+      'Họ và tên': r.fullName,
+      'Điểm rèn luyện': r.finalScore,
+      'Lỗi vi phạm': r.violationsLines.join('\n'),
+      'Cộng điểm': r.bonusesList.join(', '),
+    }));
+
+    exportToExcel(
+      exportRows,
+      `Ket_qua_ren_luyen_Lop_${classConfig.className}_Thang_${selectedMonth}`,
+      `Thang_${selectedMonth}`
+    );
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   // Zero-violation rule for the month
   const zeroViolationMonthlyRule = useMemo(() => {
@@ -893,8 +940,60 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
       </div>
     </div>
 
-      {/* Main Monthly Matrix Table */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      {/* CHUYỂN ĐỔI CHẾ ĐỘ XEM: BẢNG QUẢN TRỊ ĐẦY ĐỦ / MẪU SỔ RÈN LUYỆN TRUYỀN THỐNG */}
+      <div className="flex items-center justify-between flex-wrap gap-2.5 print:hidden">
+        <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-750 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setViewMode('management')}
+            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+              viewMode === 'management'
+                ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-bold shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <TableProperties className="h-3.5 w-3.5" />
+            <span>Bảng quản trị đầy đủ</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('conduct-sheet')}
+            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+              viewMode === 'conduct-sheet'
+                ? 'bg-white dark:bg-slate-800 text-red-600 dark:text-red-400 font-bold shadow-xs ring-1 ring-red-200 dark:ring-red-900'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 text-red-500" />
+            <span>Mẫu Sổ Rèn Luyện (A4)</span>
+          </button>
+        </div>
+
+        {viewMode === 'conduct-sheet' && (
+          <span className="text-xs text-slate-500 font-medium italic">
+            Mẫu 5 cột chuẩn theo sổ theo dõi rèn luyện: Điểm rèn luyện đỏ, Lỗi vi phạm và Cộng điểm chi tiết.
+          </span>
+        )}
+      </div>
+
+      {viewMode === 'conduct-sheet' ? (
+        <ConductSheetTable
+          className={classConfig.className}
+          periodLabel={`Tháng ${selectedMonth}`}
+          rows={conductRows}
+          sortField={sortField === 'name' ? 'name' : sortField === 'score' ? 'score' : 'stt'}
+          sortDirection={sortDirection}
+          onSortChange={(field) => {
+            if (field === 'name') handleSortChange('name');
+            else if (field === 'score') handleSortChange('score');
+            else handleSortChange('code');
+          }}
+          onPrint={handlePrint}
+          onExportExcel={handleExportConductSheetExcel}
+        />
+      ) : (
+        /* Main Monthly Matrix Table */
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
         <div className="overflow-x-auto max-h-[650px] scrollbar-thin">
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-slate-100 dark:bg-slate-750 text-slate-700 dark:text-slate-300 uppercase tracking-wider font-semibold sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700">
@@ -1121,6 +1220,7 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
           </table>
         </div>
       </div>
+      )}
 
       {/* MODAL: XÉT THƯỞNG TỰ ĐỘNG THÁNG */}
       {isAutoMonthlyAwardModalOpen && zeroViolationMonthlyRule && (
