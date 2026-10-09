@@ -17,8 +17,10 @@ import {
   Sparkles,
   MapPin,
   Sliders,
+  Trash2,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { DEFAULT_RANK_THRESHOLDS } from '../lib/utils';
 
 export interface EditClassTeacherModalProps {
   isOpen: boolean;
@@ -31,9 +33,11 @@ export const EditClassTeacherModal: React.FC<EditClassTeacherModalProps> = ({
   onClose,
   defaultTab = 'teacher',
 }) => {
-  const { classConfig, updateClassConfig, students, userRole, activeAccount, schoolClasses } = useApp();
+  const { classConfig, updateClassConfig, students, userRole, activeAccount, schoolClasses, workspaceClasses, deleteWorkspaceClass } = useApp();
 
   const [activeTab, setActiveTab] = useState<'teacher' | 'class' | 'cadres' | 'scoring'>(defaultTab);
+  const [confirmDeleteClass, setConfirmDeleteClass] = useState(false);
+  const [isDeletingClass, setIsDeletingClass] = useState(false);
 
   // Form states
   const [homeroomTeacher, setHomeroomTeacher] = useState(classConfig.homeroomTeacher || '');
@@ -55,7 +59,15 @@ export const EditClassTeacherModal: React.FC<EditClassTeacherModalProps> = ({
 
   const [baseScore, setBaseScore] = useState<number>(classConfig.baseScore ?? 10);
   const [minScore, setMinScore] = useState<number>(classConfig.minScore ?? 0);
-  const [maxScore, setMaxScore] = useState<number>(classConfig.maxScore ?? 10);
+  const [maxScore, setMaxScore] = useState<number>(classConfig.maxScore && classConfig.maxScore > 10 ? classConfig.maxScore : 100);
+
+  // Customizable Rank Thresholds
+  const [rankXuatSac, setRankXuatSac] = useState<number>(classConfig.rankThresholds?.xuatSac ?? DEFAULT_RANK_THRESHOLDS.xuatSac);
+  const [rankTot, setRankTot] = useState<number>(classConfig.rankThresholds?.tot ?? DEFAULT_RANK_THRESHOLDS.tot);
+  const [rankKha, setRankKha] = useState<number>(classConfig.rankThresholds?.kha ?? DEFAULT_RANK_THRESHOLDS.kha);
+  const [rankDat, setRankDat] = useState<number>(classConfig.rankThresholds?.dat ?? DEFAULT_RANK_THRESHOLDS.dat);
+  const [rankXuatSacNote, setRankXuatSacNote] = useState<string>(classConfig.rankThresholds?.xuatSacNote || DEFAULT_RANK_THRESHOLDS.xuatSacNote || 'Bốc thăm phần thưởng');
+  const [rankKhongDatNote, setRankKhongDatNote] = useState<string>(classConfig.rankThresholds?.khongDatNote || DEFAULT_RANK_THRESHOLDS.khongDatNote || 'Bốc thăm hình phạt');
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -82,9 +94,17 @@ export const EditClassTeacherModal: React.FC<EditClassTeacherModalProps> = ({
 
       setBaseScore(classConfig.baseScore ?? 10);
       setMinScore(classConfig.minScore ?? 0);
-      setMaxScore(classConfig.maxScore ?? 10);
+      setMaxScore(classConfig.maxScore && classConfig.maxScore > 10 ? classConfig.maxScore : 100);
+
+      setRankXuatSac(classConfig.rankThresholds?.xuatSac ?? DEFAULT_RANK_THRESHOLDS.xuatSac);
+      setRankTot(classConfig.rankThresholds?.tot ?? DEFAULT_RANK_THRESHOLDS.tot);
+      setRankKha(classConfig.rankThresholds?.kha ?? DEFAULT_RANK_THRESHOLDS.kha);
+      setRankDat(classConfig.rankThresholds?.dat ?? DEFAULT_RANK_THRESHOLDS.dat);
+      setRankXuatSacNote(classConfig.rankThresholds?.xuatSacNote || DEFAULT_RANK_THRESHOLDS.xuatSacNote || 'Bốc thăm phần thưởng');
+      setRankKhongDatNote(classConfig.rankThresholds?.khongDatNote || DEFAULT_RANK_THRESHOLDS.khongDatNote || 'Bốc thăm hình phạt');
 
       setSaveSuccess(false);
+      setConfirmDeleteClass(false);
       setActiveTab(defaultTab);
     }
   }, [isOpen, classConfig, defaultTab]);
@@ -114,6 +134,16 @@ export const EditClassTeacherModal: React.FC<EditClassTeacherModalProps> = ({
       return;
     }
 
+    // Validate rank thresholds
+    if (rankXuatSac <= rankTot || rankTot <= rankKha || rankKha <= rankDat) {
+      alert('Điểm tiêu chuẩn xếp loại phải giảm dần: Xuất sắc > Tốt > Khá > Đạt. Vui lòng kiểm tra lại!');
+      return;
+    }
+    if (rankDat < minScore) {
+      alert(`Điểm xếp loại Đạt (${rankDat}đ) không được thấp hơn điểm sàn (${minScore}đ).`);
+      return;
+    }
+
     try {
       setIsSaving(true);
       await updateClassConfig({
@@ -137,6 +167,15 @@ export const EditClassTeacherModal: React.FC<EditClassTeacherModalProps> = ({
         baseScore: Number(baseScore),
         minScore: Number(minScore),
         maxScore: Number(maxScore),
+
+        rankThresholds: {
+          xuatSac: Number(rankXuatSac),
+          tot: Number(rankTot),
+          kha: Number(rankKha),
+          dat: Number(rankDat),
+          xuatSacNote: rankXuatSacNote.trim() || 'Bốc thăm phần thưởng',
+          khongDatNote: rankKhongDatNote.trim() || 'Bốc thăm hình phạt',
+        },
       });
 
       setSaveSuccess(true);
@@ -430,7 +469,101 @@ export const EditClassTeacherModal: React.FC<EditClassTeacherModalProps> = ({
                     (Tự động đồng bộ từ danh sách Học sinh)
                   </span>
                 </div>
+
+                {/* Quy chuẩn Thời khóa biểu 2 buổi / ngày, mỗi buổi 5 tiết */}
+                <div className="sm:col-span-2 p-3.5 bg-gradient-to-r from-blue-50/70 to-indigo-50/70 dark:from-slate-800 dark:to-slate-800/80 rounded-xl border border-blue-200/80 dark:border-slate-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 text-xs flex items-center gap-1.5">
+                      <span>⏰ Chế độ học tập:</span>
+                      <span className="text-blue-600 dark:text-blue-400">2 Buổi / Ngày (Mỗi buổi 5 tiết)</span>
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300 font-bold">
+                      10 tiết / ngày
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                    <div className="p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-750">
+                      <div className="font-bold text-amber-600 dark:text-amber-400 mb-1 flex items-center gap-1">
+                        <span>☀️ Buổi Sáng (5 tiết):</span>
+                      </div>
+                      <div className="text-slate-600 dark:text-slate-400 space-y-0.5">
+                        <div>• Tiết 1, Tiết 2, Tiết 3, Tiết 4, Tiết 5</div>
+                        <div className="text-[10px] text-slate-400">Kèm: Đầu giờ sáng truy bài, Ra chơi sáng</div>
+                      </div>
+                    </div>
+                    <div className="p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-750">
+                      <div className="font-bold text-sky-600 dark:text-sky-400 mb-1 flex items-center gap-1">
+                        <span>🌤️ Buổi Chiều (5 tiết):</span>
+                      </div>
+                      <div className="text-slate-600 dark:text-slate-400 space-y-0.5">
+                        <div>• Tiết 6 (T1C), Tiết 7 (T2C), Tiết 8, Tiết 9, Tiết 10</div>
+                        <div className="text-[10px] text-slate-400">Kèm: Đầu giờ chiều truy bài, Ra chơi chiều</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
+
+              {workspaceClasses.length > 1 && userRole !== 'monitor' && (
+                <div className="mt-4 p-4 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50/60 dark:bg-rose-950/30 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-xs font-bold text-rose-700 dark:text-rose-400 flex items-center gap-1.5">
+                        <Trash2 className="h-4 w-4" />
+                        <span>Xóa lớp học này</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Xóa vĩnh viễn lớp “{className} · {schoolYear}” cùng học sinh và điểm nề nếp tương ứng.
+                      </p>
+                    </div>
+                    {!confirmDeleteClass && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteClass(true)}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+                      >
+                        Xóa lớp này
+                      </button>
+                    )}
+                  </div>
+
+                  {confirmDeleteClass && (
+                    <div className="pt-2 border-t border-rose-200 dark:border-rose-900/60 flex flex-wrap items-center justify-between gap-3">
+                      <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                        ⚠️ Xác nhận xóa? Thao tác không thể hoàn tác!
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={isDeletingClass}
+                          onClick={() => setConfirmDeleteClass(false)}
+                          className="px-3 py-1 bg-white dark:bg-slate-800 border rounded-lg text-xs font-medium cursor-pointer"
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isDeletingClass}
+                          onClick={async () => {
+                            try {
+                              setIsDeletingClass(true);
+                              await deleteWorkspaceClass(classConfig.id);
+                              onClose();
+                            } catch (err: any) {
+                              alert(err.message || String(err));
+                            } finally {
+                              setIsDeletingClass(false);
+                            }
+                          }}
+                          className="px-3 py-1 bg-rose-600 text-white rounded-lg text-xs font-bold hover:bg-rose-700 cursor-pointer disabled:opacity-50"
+                        >
+                          {isDeletingClass ? 'Đang xóa…' : 'Xác nhận xóa vĩnh viễn'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -548,38 +681,189 @@ export const EditClassTeacherModal: React.FC<EditClassTeacherModalProps> = ({
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-mono font-bold focus:ring-2 focus:ring-blue-500"
                   />
                   <span className="text-[11px] text-slate-400 mt-1 block">
-                    Mặc định giới hạn: 10,0đ
+                    Mặc định trần: 100đ (cho phép cộng điểm vượt mức 10)
                   </span>
                 </div>
               </div>
 
-              {/* Standard Rank Rules Box */}
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
-                <span className="font-bold text-slate-800 dark:text-slate-200 block">
-                  Tiêu chuẩn xếp loại rèn luyện thi đua theo thang điểm [0..10]:
-                </span>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-semibold">
-                    <span className="block text-[11px]">Xuất sắc</span>
-                    <span className="text-sm font-black">≥ 9.5đ</span>
+              {/* Tiêu chuẩn xếp loại rèn luyện thi đua (Cho phép chỉnh sửa linh hoạt) */}
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-3 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="font-bold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-1.5">
+                      <span>🏆 Tiêu chuẩn xếp loại rèn luyện thi đua:</span>
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                      Thầy/cô có thể sửa trực tiếp điểm ngưỡng hoặc chọn mẫu nhanh:
+                    </span>
                   </div>
-                  <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 font-semibold">
-                    <span className="block text-[11px]">Tốt</span>
-                    <span className="text-sm font-black">≥ 8.5đ</span>
-                  </div>
-                  <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 font-semibold">
-                    <span className="block text-[11px]">Khá</span>
-                    <span className="text-sm font-black">≥ 7.0đ</span>
-                  </div>
-                  <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-semibold">
-                    <span className="block text-[11px]">Trung bình</span>
-                    <span className="text-sm font-black">≥ 5.0đ</span>
-                  </div>
-                  <div className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 font-semibold">
-                    <span className="block text-[11px]">Yếu</span>
-                    <span className="text-sm font-black">&lt; 5.0đ</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRankXuatSac(12);
+                        setRankTot(8);
+                        setRankKha(7);
+                        setRankDat(5);
+                        setRankXuatSacNote('Bốc thăm phần thưởng');
+                        setRankKhongDatNote('Bốc thăm hình phạt');
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-400 hover:text-blue-600 transition-colors shadow-2xs"
+                    >
+                      🎯 Chuẩn 10A8 (12-8-7-5)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRankXuatSac(9);
+                        setRankTot(8);
+                        setRankKha(6.5);
+                        setRankDat(5);
+                        setRankXuatSacNote('Khen thưởng xuất sắc');
+                        setRankKhongDatNote('Nhắc nhở rèn luyện');
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-2xs"
+                    >
+                      📋 Chuẩn thang 10 (9-8-6.5-5)
+                    </button>
                   </div>
                 </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                  {/* Xuất sắc */}
+                  <div className="p-2.5 rounded-xl bg-amber-50/90 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 flex flex-col justify-between">
+                    <div>
+                      <div className="font-bold text-amber-900 dark:text-amber-300 text-xs mb-1">
+                        Xuất sắc 🎁
+                      </div>
+                      <div className="flex items-center gap-1 mt-1">
+                        <span className="font-bold text-slate-600 dark:text-slate-300 text-xs">≥</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={rankXuatSac}
+                          onChange={(e) => setRankXuatSac(Number(e.target.value))}
+                          className="w-full px-1.5 py-1 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded-lg font-mono font-black text-amber-800 dark:text-amber-300 text-center text-sm focus:ring-2 focus:ring-amber-500"
+                        />
+                        <span className="font-bold text-slate-600 dark:text-slate-300 text-xs">đ</span>
+                      </div>
+                    </div>
+                    <div className="mt-2 pt-1.5 border-t border-amber-200/60 dark:border-amber-800/40">
+                      <input
+                        type="text"
+                        value={rankXuatSacNote}
+                        onChange={(e) => setRankXuatSacNote(e.target.value)}
+                        placeholder="Ghi chú thưởng..."
+                        title="Ghi chú thưởng cho loại Xuất sắc"
+                        className="w-full px-1 py-0.5 text-[10px] bg-white/80 dark:bg-slate-900/70 border border-amber-200 dark:border-amber-800 rounded text-amber-800 dark:text-amber-300 text-center focus:outline-hidden"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Tốt */}
+                  <div className="p-2.5 rounded-xl bg-emerald-50/90 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 flex flex-col justify-between">
+                    <div>
+                      <div className="font-bold text-emerald-900 dark:text-emerald-300 text-xs mb-1">
+                        Tốt ⭐
+                      </div>
+                      <div className="flex items-center gap-1 mt-1">
+                        <span className="font-bold text-slate-600 dark:text-slate-300 text-xs">Từ</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={rankTot}
+                          onChange={(e) => setRankTot(Number(e.target.value))}
+                          className="w-full px-1.5 py-1 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 rounded-lg font-mono font-black text-emerald-800 dark:text-emerald-300 text-center text-sm focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <span className="font-bold text-slate-600 dark:text-slate-300 text-xs">đ</span>
+                      </div>
+                    </div>
+                    <div className="mt-2 pt-1.5 border-t border-emerald-200/60 dark:border-emerald-800/40 text-center">
+                      <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+                        đến &lt; {rankXuatSac}đ
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Khá */}
+                  <div className="p-2.5 rounded-xl bg-blue-50/90 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/60 flex flex-col justify-between">
+                    <div>
+                      <div className="font-bold text-blue-900 dark:text-blue-300 text-xs mb-1">
+                        Khá 👍
+                      </div>
+                      <div className="flex items-center gap-1 mt-1">
+                        <span className="font-bold text-slate-600 dark:text-slate-300 text-xs">Từ</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={rankKha}
+                          onChange={(e) => setRankKha(Number(e.target.value))}
+                          className="w-full px-1.5 py-1 bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 rounded-lg font-mono font-black text-blue-800 dark:text-blue-300 text-center text-sm focus:ring-2 focus:ring-blue-500"
+                        />
+                        <span className="font-bold text-slate-600 dark:text-slate-300 text-xs">đ</span>
+                      </div>
+                    </div>
+                    <div className="mt-2 pt-1.5 border-t border-blue-200/60 dark:border-blue-800/40 text-center">
+                      <span className="text-[10px] font-semibold text-blue-700 dark:text-blue-400">
+                        đến &lt; {rankTot}đ
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Đạt */}
+                  <div className="p-2.5 rounded-xl bg-orange-50/90 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800/60 flex flex-col justify-between">
+                    <div>
+                      <div className="font-bold text-orange-900 dark:text-orange-300 text-xs mb-1">
+                        Đạt ✔️
+                      </div>
+                      <div className="flex items-center gap-1 mt-1">
+                        <span className="font-bold text-slate-600 dark:text-slate-300 text-xs">Từ</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={rankDat}
+                          onChange={(e) => setRankDat(Number(e.target.value))}
+                          className="w-full px-1.5 py-1 bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-700 rounded-lg font-mono font-black text-orange-800 dark:text-orange-300 text-center text-sm focus:ring-2 focus:ring-orange-500"
+                        />
+                        <span className="font-bold text-slate-600 dark:text-slate-300 text-xs">đ</span>
+                      </div>
+                    </div>
+                    <div className="mt-2 pt-1.5 border-t border-orange-200/60 dark:border-orange-800/40 text-center">
+                      <span className="text-[10px] font-semibold text-orange-700 dark:text-orange-400">
+                        đến &lt; {rankKha}đ
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Không đạt */}
+                  <div className="col-span-2 sm:col-span-1 p-2.5 rounded-xl bg-rose-50/90 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 flex flex-col justify-between">
+                    <div>
+                      <div className="font-bold text-rose-900 dark:text-rose-300 text-xs mb-1">
+                        Không đạt ⚠️
+                      </div>
+                      <div className="flex items-center justify-center gap-1 mt-1 py-1 bg-white/80 dark:bg-slate-900/70 rounded-lg border border-rose-200 dark:border-rose-800/40">
+                        <span className="font-black text-rose-700 dark:text-rose-400 font-mono text-sm">&lt; {rankDat}đ</span>
+                      </div>
+                    </div>
+                    <div className="mt-2 pt-1.5 border-t border-rose-200/60 dark:border-rose-800/40">
+                      <input
+                        type="text"
+                        value={rankKhongDatNote}
+                        onChange={(e) => setRankKhongDatNote(e.target.value)}
+                        placeholder="Ghi chú phạt..."
+                        title="Ghi chú hình phạt cho loại Không đạt"
+                        className="w-full px-1 py-0.5 text-[10px] bg-white/80 dark:bg-slate-900/70 border border-rose-200 dark:border-rose-800 rounded text-rose-800 dark:text-rose-300 text-center focus:outline-hidden"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cảnh báo nếu số liệu không hợp lệ */}
+                {(rankXuatSac <= rankTot || rankTot <= rankKha || rankKha <= rankDat) && (
+                  <div className="p-2 bg-amber-100 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 rounded-lg text-amber-800 dark:text-amber-200 text-[11px] font-medium flex items-center gap-1.5">
+                    <span>⚠️ <strong>Lưu ý:</strong> Ngưỡng điểm phải giảm dần theo thứ tự: Xuất sắc ({rankXuatSac}) &gt; Tốt ({rankTot}) &gt; Khá ({rankKha}) &gt; Đạt ({rankDat}).</span>
+                  </div>
+                )}
               </div>
             </div>
           )}

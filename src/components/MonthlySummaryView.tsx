@@ -24,6 +24,8 @@ import {
   Trash2,
   Share2,
   MessageSquareText,
+  Users,
+  UserX,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { DisciplineLog } from '../types';
@@ -38,15 +40,27 @@ import {
 import { TabType } from './Navbar';
 import { SummaryZaloExportModal } from './SummaryZaloExportModal';
 import { PeriodLockBannerV2 } from './v2/PeriodLockBannerV2';
+import { ScoreExplanation } from './ScoreExplanation';
+import { PeriodReview } from './PeriodReview';
+import { StudentPointEditor } from './StudentPointEditor';
+import { isMonthlyBonus } from '../lib/scoreBreakdown';
 
 interface MonthlySummaryViewProps {
   onNavigateTab: (tab: TabType) => void;
   onSelectStudentForReport?: (studentId: string, period?: ReportPeriodSelection) => void;
+  onNavigateToZalo?: (params: {
+    studentId?: string | null;
+    week?: number;
+    month?: number;
+    mode?: 'week' | 'month';
+    templateId?: string;
+  }) => void;
 }
 
 export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
   onNavigateTab,
   onSelectStudentForReport,
+  onNavigateToZalo,
 }) => {
   const {
     classConfig,
@@ -61,7 +75,10 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
   } = useApp();
 
   const [selectedMonth, setSelectedMonth] = useState<number>(9);
+  const [explainStudentId, setExplainStudentId] = useState<string | null>(null);
+  const [editPointsStudentId, setEditPointsStudentId] = useState<string | null>(null);
   const [rankFilter, setRankFilter] = useState<string>('all');
+  const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'unexcused' | 'excused' | 'any'>('all');
   const [isZaloModalOpen, setIsZaloModalOpen] = useState<boolean>(false);
 
   // Modals for monthly achievement awards
@@ -109,7 +126,32 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
   // Derived monthly summaries from source logs
   const monthlyData = useMemo(() => {
     return getMonthlySummary(selectedMonth);
-  }, [getMonthlySummary, selectedMonth]);
+  }, [getMonthlySummary, selectedMonth, disciplineLogs]);
+
+  // Attendance stats for quick filter buttons
+  const attendanceStats = useMemo(() => {
+    let unexcusedCount = 0;
+    let excusedCount = 0;
+    let anyAbsenceCount = 0;
+    let truancyCount = 0;
+
+    monthlyData.forEach((s) => {
+      const u = s.unexcusedAbsenceCount || 0;
+      const e = s.excusedAbsenceCount || 0;
+      const t = s.truancyCount || 0;
+      if (u > 0) unexcusedCount++;
+      if (e > 0) excusedCount++;
+      if (u > 0 || e > 0 || t > 0) anyAbsenceCount++;
+      if (t > 0) truancyCount++;
+    });
+
+    return {
+      unexcusedCount,
+      excusedCount,
+      anyAbsenceCount,
+      truancyCount,
+    };
+  }, [monthlyData]);
 
   // Sorting state for monthly table
   const [sortField, setSortField] = useState<'score' | 'name' | 'code'>('score');
@@ -127,8 +169,23 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
   // Filtered and sorted
   const filteredData = useMemo(() => {
     let list = monthlyData;
+
+    // Filter by rank
     if (rankFilter !== 'all') {
-      list = monthlyData.filter((d) => d.rank === rankFilter);
+      list = list.filter((d) => {
+        if (rankFilter === 'Đạt' || rankFilter === 'Trung bình') return d.rank === 'Đạt' || d.rank === 'Trung bình';
+        if (rankFilter === 'Không đạt' || rankFilter === 'Yếu') return d.rank === 'Không đạt' || d.rank === 'Yếu';
+        return d.rank === rankFilter;
+      });
+    }
+
+    // Filter by attendance
+    if (attendanceFilter === 'unexcused') {
+      list = list.filter((d) => (d.unexcusedAbsenceCount || 0) > 0);
+    } else if (attendanceFilter === 'excused') {
+      list = list.filter((d) => (d.excusedAbsenceCount || 0) > 0);
+    } else if (attendanceFilter === 'any') {
+      list = list.filter((d) => (d.unexcusedAbsenceCount || 0) > 0 || (d.excusedAbsenceCount || 0) > 0 || (d.truancyCount || 0) > 0);
     }
 
     return [...list].sort((a, b) => {
@@ -143,7 +200,7 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
       if (diff !== 0) return sortDirection === 'desc' ? diff : -diff;
       return compareVietnameseNames(a, b, 'asc');
     });
-  }, [monthlyData, rankFilter, sortField, sortDirection]);
+  }, [monthlyData, rankFilter, attendanceFilter, sortField, sortDirection]);
 
   // Zero-violation rule for the month
   const zeroViolationMonthlyRule = useMemo(() => {
@@ -189,8 +246,10 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
       'Xuất sắc': monthlyData.filter((d) => d.rank === 'Xuất sắc').length,
       'Tốt': monthlyData.filter((d) => d.rank === 'Tốt').length,
       'Khá': monthlyData.filter((d) => d.rank === 'Khá').length,
-      'Trung bình': monthlyData.filter((d) => d.rank === 'Trung bình').length,
-      'Yếu': monthlyData.filter((d) => d.rank === 'Yếu').length,
+      'Đạt': monthlyData.filter((d) => d.rank === 'Đạt' || d.rank === 'Trung bình').length,
+      'Không đạt': monthlyData.filter((d) => d.rank === 'Không đạt' || d.rank === 'Yếu').length,
+      'Trung bình': monthlyData.filter((d) => d.rank === 'Đạt' || d.rank === 'Trung bình').length,
+      'Yếu': monthlyData.filter((d) => d.rank === 'Không đạt' || d.rank === 'Yếu').length,
     };
 
     return {
@@ -380,6 +439,8 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
       });
 
       row['Tổng điểm trừ tháng'] = formatVietnameseNumber(s.totalDeduct);
+      row['Thưởng tuần đã ghi trong tháng'] = formatVietnameseNumber(s.weeklyBonus || 0);
+      row['Thưởng riêng tháng'] = formatVietnameseNumber(s.monthlyBonus || 0);
       row['Thưởng thường tháng'] = formatVietnameseNumber(s.totalBonus - (s.achievementBonus || 0));
       row['Thưởng thành tích tháng 🏆'] = formatVietnameseNumber(s.achievementBonus || 0);
       row['Danh hiệu thành tích tháng'] = (s.achievements || []).join('; ');
@@ -399,6 +460,9 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
 
   return (
     <div className="space-y-5">
+      <PeriodReview month={selectedMonth} />
+      {explainStudentId && <ScoreExplanation studentId={explainStudentId} month={selectedMonth} onClose={() => setExplainStudentId(null)} />}
+      {editPointsStudentId && <StudentPointEditor studentId={editPointsStudentId} month={selectedMonth} onClose={() => setEditPointsStudentId(null)} />}
       {/* Top Filter Bar */}
       <div className="bg-white dark:bg-slate-800 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
         <div>
@@ -434,8 +498,18 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
           </div>
 
           <button
-            onClick={() => onNavigateTab('zalo-composer')}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-semibold rounded-xl border border-indigo-200 dark:border-indigo-800 transition active:scale-95 shadow-xs"
+            onClick={() => {
+              if (onNavigateToZalo) {
+                onNavigateToZalo({
+                  month: selectedMonth,
+                  mode: 'month',
+                  templateId: 'monthly_class_group',
+                });
+              } else {
+                onNavigateTab('zalo-composer');
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-semibold rounded-xl border border-indigo-200 dark:border-indigo-800 transition active:scale-95 shadow-xs cursor-pointer"
             title="Soạn thảo tin nhắn Zalo tháng kèm số liệu điểm số và xếp loại thi đua"
           >
             <MessageSquareText className="h-3.5 w-3.5" />
@@ -443,8 +517,17 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
           </button>
 
           <button
+            onClick={() => onNavigateTab('attendance-report')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 text-xs font-bold rounded-xl border border-rose-200 dark:border-rose-850 shadow-xs transition active:scale-95 cursor-pointer"
+            title="Mở Báo cáo danh sách học sinh nghỉ học chi tiết số buổi và lý do"
+          >
+            <UserX className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+            <span>Báo cáo nghỉ học</span>
+          </button>
+
+          <button
             onClick={() => setIsZaloModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-xs transition active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-xs transition active:scale-95 cursor-pointer"
             title="Sao chép hình ảnh Tổng kết Tháng để dán gửi nhóm Zalo phụ huynh"
           >
             <Share2 className="h-3.5 w-3.5" />
@@ -616,37 +699,149 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
         </div>
       </div>
 
-      {/* Filter by Rank and Sort Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs print:hidden">
-        <div className="flex items-center gap-1.5 overflow-x-auto font-semibold">
-          <span className="text-slate-500 font-normal">Lọc theo xếp loại:</span>
-          <button
-            onClick={() => setRankFilter('all')}
-            className={`px-3 py-1 rounded-lg transition ${
-              rankFilter === 'all'
-                ? 'bg-blue-600 text-white'
-                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-            }`}
-          >
-            Tất cả ({monthlyData.length})
-          </button>
-          {(['Xuất sắc', 'Tốt', 'Khá', 'Trung bình', 'Yếu'] as const).map((r) => (
+      {/* KHỐI BỘ LỌC CHUYÊN CẦN & XẾP LOẠI THI ĐUA */}
+      <div className="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-2.5 print:hidden">
+        {/* Dòng 1: Bộ lọc Chuyên Cần & Vắng Nghỉ */}
+        <div className="flex items-center justify-between flex-wrap gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-700/60">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-750 text-slate-700 dark:text-slate-300 font-bold text-xs shrink-0">
+              <Users className="h-3.5 w-3.5 text-blue-600" />
+              <span>Chuyên cần & Nghỉ học:</span>
+            </span>
+
             <button
-              key={r}
-              onClick={() => setRankFilter(r)}
-              className={`px-3 py-1 rounded-lg transition ${
-                rankFilter === r
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+              onClick={() => {
+                setAttendanceFilter('all');
+              }}
+              className={`px-3 py-1 rounded-lg transition font-semibold cursor-pointer text-xs ${
+                attendanceFilter === 'all'
+                  ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
               }`}
             >
-              {r} ({stats.ranks[r]})
+              Tất cả chuyên cần
             </button>
-          ))}
+
+            {/* Lọc: Nghỉ có phép */}
+            <button
+              onClick={() => {
+                setRankFilter('all');
+                setAttendanceFilter((prev) => (prev === 'excused' ? 'all' : 'excused'));
+              }}
+              className={`px-3 py-1 rounded-lg transition font-semibold flex items-center gap-1.5 border cursor-pointer text-xs ${
+                attendanceFilter === 'excused'
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-sm ring-2 ring-amber-400'
+                  : attendanceStats.excusedCount > 0
+                  ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800 font-bold'
+                  : 'bg-slate-50 dark:bg-slate-750 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+              }`}
+              title="Lọc danh sách học sinh có nghỉ học có phép trong tháng"
+            >
+              <span>📋 Nghỉ có phép</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
+                attendanceFilter === 'excused' ? 'bg-white/20 text-white' : 'bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100'
+              }`}>
+                {attendanceStats.excusedCount}
+              </span>
+            </button>
+
+            {/* Lọc: Nghỉ không phép */}
+            <button
+              onClick={() => {
+                setRankFilter('all');
+                setAttendanceFilter((prev) => (prev === 'unexcused' ? 'all' : 'unexcused'));
+              }}
+              className={`px-3 py-1 rounded-lg transition font-semibold flex items-center gap-1.5 border cursor-pointer text-xs ${
+                attendanceFilter === 'unexcused'
+                  ? 'bg-rose-600 text-white border-rose-600 shadow-sm ring-2 ring-rose-400'
+                  : attendanceStats.unexcusedCount > 0
+                  ? 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-800 font-bold'
+                  : 'bg-slate-50 dark:bg-slate-750 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+              }`}
+              title="Lọc danh sách học sinh nghỉ học không phép trong tháng"
+            >
+              <span>⚠️ Nghỉ không phép</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
+                attendanceFilter === 'unexcused' ? 'bg-white/20 text-white' : 'bg-rose-200 dark:bg-rose-900 text-rose-900 dark:text-rose-100'
+              }`}>
+                {attendanceStats.unexcusedCount}
+              </span>
+            </button>
+
+            {/* Tất cả học sinh có vắng nghỉ (dù có phép hay không phép) */}
+            <button
+              onClick={() => {
+                setRankFilter('all');
+                setAttendanceFilter((prev) => (prev === 'any' ? 'all' : 'any'));
+              }}
+              className={`px-3.5 py-1 rounded-lg transition font-medium flex items-center gap-1.5 border cursor-pointer text-xs ${
+                attendanceFilter === 'any'
+                  ? 'bg-rose-700 text-white border-rose-700 shadow-sm ring-2 ring-rose-400'
+                  : attendanceStats.anyAbsenceCount > 0
+                  ? 'bg-rose-100 text-rose-900 border-rose-300 hover:bg-rose-200 dark:bg-rose-950 dark:text-rose-100 dark:border-rose-700'
+                  : 'bg-slate-50 dark:bg-slate-750 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+              }`}
+              title="Danh sách tất cả học sinh có vắng nghỉ trong tháng (có phép hoặc không phép)"
+            >
+              <span>👥 Tất cả HS nghỉ</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-extrabold ${
+                attendanceFilter === 'any' ? 'bg-white/20 text-white' : 'bg-rose-600 text-white'
+              }`}>
+                {attendanceStats.anyAbsenceCount}
+              </span>
+            </button>
+          </div>
+
+          {(rankFilter !== 'all' || attendanceFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setRankFilter('all');
+                setAttendanceFilter('all');
+              }}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold flex items-center gap-1 cursor-pointer bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 rounded-lg"
+              title="Xóa toàn bộ bộ lọc và hiển thị tất cả học sinh"
+            >
+              <span>✕ Xóa tất cả bộ lọc</span>
+            </button>
+          )}
         </div>
 
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-slate-500 dark:text-slate-400 font-medium">Xếp theo:</span>
+        {/* Dòng 2: Bộ lọc Xếp loại thi đua & Sắp xếp danh sách */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs pt-0.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-slate-500 font-medium shrink-0">Xếp loại thi đua:</span>
+            <button
+              onClick={() => {
+                setRankFilter('all');
+              }}
+              className={`px-3 py-1 rounded-lg transition font-semibold cursor-pointer ${
+                rankFilter === 'all'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-650'
+              }`}
+            >
+              Tất cả ({monthlyData.length})
+            </button>
+            {(['Xuất sắc', 'Tốt', 'Khá', 'Đạt', 'Không đạt'] as const).map((r) => (
+              <button
+                key={r}
+                onClick={() => {
+                  setAttendanceFilter('all');
+                  setRankFilter((prev) => (prev === r ? 'all' : r));
+                }}
+                className={`px-2.5 py-1 rounded-lg transition font-semibold cursor-pointer ${
+                  rankFilter === r
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-650'
+                }`}
+              >
+                {r} ({stats.ranks[r]})
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-slate-500 dark:text-slate-400 font-medium shrink-0">Xếp theo:</span>
           
           <button
             onClick={() => handleSortChange('score')}
@@ -696,6 +891,7 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
           </button>
         </div>
       </div>
+    </div>
 
       {/* Main Monthly Matrix Table */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
@@ -762,7 +958,35 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-              {filteredData.map((s, idx) => {
+              {filteredData.length === 0 ? (
+                <tr>
+                  <td colSpan={monthWeeks.length + 8} className="py-12 text-center text-slate-500">
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      Không có học sinh nào phù hợp với bộ lọc hiện tại.
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {attendanceFilter === 'unexcused'
+                        ? 'Tháng này không có học sinh nào nghỉ học không phép.'
+                        : attendanceFilter === 'excused'
+                        ? 'Tháng này không có học sinh nào nghỉ học có phép.'
+                        : attendanceFilter === 'any'
+                        ? 'Tháng này không có học sinh nào nghỉ học (100% học sinh đi học đầy đủ).'
+                        : 'Không tìm thấy kết quả phù hợp.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRankFilter('all');
+                        setAttendanceFilter('all');
+                      }}
+                      className="mt-3 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300 rounded-lg transition cursor-pointer"
+                    >
+                      Xem toàn bộ {monthlyData.length} học sinh
+                    </button>
+                  </td>
+                </tr>
+              ) : (
+                filteredData.map((s, idx) => {
                 const rankBadge = getRankBadgeClass(s.rank);
                 const hasAchievement = (s.achievementCount || 0) > 0;
 
@@ -780,7 +1004,7 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
                       {s.studentCode}
                     </td>
                     <td className="py-2.5 px-3">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-bold text-slate-900 dark:text-white">
                           {s.fullName}
                         </span>
@@ -792,6 +1016,31 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
                             <Award className="h-3.5 w-3.5" />
                           </span>
                         )}
+                        {/* Huy hiệu Chuyên cần / Nghỉ học */}
+                        {s.unexcusedAbsenceCount > 0 && (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-200 dark:border-rose-800"
+                            title={`Nghỉ học không phép: ${s.unexcusedAbsenceCount} buổi trong tháng`}
+                          >
+                            KP: {s.unexcusedAbsenceCount}
+                          </span>
+                        )}
+                        {s.excusedAbsenceCount > 0 && (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                            title={`Nghỉ học có phép: ${s.excusedAbsenceCount} buổi trong tháng`}
+                          >
+                            P: {s.excusedAbsenceCount}
+                          </span>
+                        )}
+                        {s.truancyCount > 0 && (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300 border border-purple-200 dark:border-purple-800"
+                            title={`Bỏ / trốn tiết: ${s.truancyCount} lần trong tháng`}
+                          >
+                            BT: {s.truancyCount}
+                          </span>
+                        )}
                       </div>
                     </td>
 
@@ -801,9 +1050,9 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
                       return (
                         <td key={w.weekNumber} className="py-2.5 px-2 text-center font-mono">
                           {deduct > 0 ? (
-                            <span className="text-rose-600 dark:text-rose-400 font-semibold">
+                            <button type="button" title="Xem, sửa hoặc xóa lỗi trong tháng" onClick={() => setEditPointsStudentId(s.studentId)} className="text-rose-600 dark:text-rose-400 font-semibold underline decoration-dotted">
                               -{formatVietnameseNumber(deduct)}
-                            </span>
+                            </button>
                           ) : (
                             <span className="text-slate-300 dark:text-slate-600">0</span>
                           )}
@@ -815,6 +1064,7 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
                       {s.totalDeduct > 0 ? `-${formatVietnameseNumber(s.totalDeduct)}đ` : '0'}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono font-bold">
+                      <div className="text-[10px] text-slate-500">Thưởng tuần: +{formatVietnameseNumber(s.weeklyBonus || 0)}đ • Riêng tháng: +{formatVietnameseNumber(s.monthlyBonus || 0)}đ</div>
                       {hasAchievement ? (
                         <button
                           type="button"
@@ -840,7 +1090,7 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
                       )}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono font-bold text-sm text-slate-900 dark:text-white">
-                      {formatVietnameseNumber(s.finalScore)}
+                      <button type="button" title="Xem cách tính điểm" className="underline decoration-dotted" onClick={() => setExplainStudentId(s.studentId)}>{formatVietnameseNumber(s.finalScore)}</button>
                     </td>
                     <td className="py-2.5 px-3 text-center whitespace-nowrap">
                       <span
@@ -866,7 +1116,7 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>
@@ -928,7 +1178,7 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
                 Hủy
               </button>
               <button
-                onClick={handleConfirmAutoMonthlyAward}
+                onClick={() => handleConfirmAutoMonthlyAward().catch(e => alert(e.message || String(e)))}
                 className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-sm transition active:scale-95"
               >
                 Xác nhận trao thưởng ({eligibleZeroViolationStudents.length} HS)
@@ -1044,7 +1294,7 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
                 Hủy
               </button>
               <button
-                onClick={handleConfirmCustomMonthlyAward}
+                onClick={() => handleConfirmCustomMonthlyAward().catch(e => alert(e.message || String(e)))}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-sm transition active:scale-95"
               >
                 Trao thưởng tháng ngay
@@ -1117,8 +1367,8 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
                     <input
                       type="number"
                       step="0.5"
-                      min="0.5"
-                      max="10"
+                      min="0.1"
+                      max="100"
                       value={editingBonusLog.score}
                       onChange={(e) =>
                         setEditingBonusLog({

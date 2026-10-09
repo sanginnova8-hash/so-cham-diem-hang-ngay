@@ -104,6 +104,58 @@ service cloud.firestore {
       allow delete: if writable(resource.data) && classUnlocked('week', resource.data.weekNumber, resource.data.classId) && classUnlocked('month', resource.data.month, resource.data.classId) && semesterOpen(resource.data);
     }
     match /periodLocks/{id} { allow read: if active(); allow write: if admin(); }
+    function familyAccess(data) {
+      return signedIn() && request.auth.token.get('email_verified', false) == true
+        && request.auth.token.get('email', '').lower() == data.viewerEmail
+        && data.revoked == false && request.time < data.expiresAt
+        && get(/databases/$(database)/documents/users/$(data.teacherId)).data.isActive == true;
+    }
+    match /familyReports/{id} {
+      allow get: if writable(resource.data) || familyAccess(resource.data);
+      allow list: if writable(resource.data);
+      allow create: if writable(request.resource.data)
+        && request.resource.data.viewerEmail is string && request.resource.data.viewerEmail.size() > 3
+        && request.resource.data.expiresAt is timestamp && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt < request.time + duration.value(31, 'd')
+        && get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.teacherId == request.resource.data.teacherId
+        && get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.classId == request.resource.data.classId;
+      allow update: if writable(resource.data) && stableOwner()
+        && request.resource.data.studentId == resource.data.studentId && request.resource.data.classId == resource.data.classId
+        && request.resource.data.viewerEmail == resource.data.viewerEmail
+        && request.resource.data.expiresAt is timestamp && request.resource.data.expiresAt < request.time + duration.value(31, 'd');
+      allow delete: if false;
+    }
+    match /correctionRequests/{id} {
+      allow read: if writable(resource.data) || (signedIn() && resource.data.requesterId == request.auth.uid);
+      allow create: if request.resource.data.keys().hasOnly(['reportId', 'teacherId', 'classId', 'studentId', 'logId', 'requesterId', 'requesterEmail', 'reason', 'requestedDescription', 'status', 'createdAt'])
+        && familyAccess(get(/databases/$(database)/documents/familyReports/$(request.resource.data.reportId)).data)
+        && request.resource.data.requesterId == request.auth.uid && request.resource.data.requesterEmail == request.auth.token.email
+        && request.resource.data.status == 'pending'
+        && request.resource.data.reason is string && request.resource.data.reason.size() > 0 && request.resource.data.reason.size() <= 1000
+        && request.resource.data.requestedDescription is string && request.resource.data.requestedDescription.size() > 0 && request.resource.data.requestedDescription.size() <= 500
+        && request.resource.data.teacherId == get(/databases/$(database)/documents/familyReports/$(request.resource.data.reportId)).data.teacherId
+        && request.resource.data.classId == get(/databases/$(database)/documents/familyReports/$(request.resource.data.reportId)).data.classId
+        && request.resource.data.studentId == get(/databases/$(database)/documents/familyReports/$(request.resource.data.reportId)).data.studentId
+        && request.resource.data.logId in get(/databases/$(database)/documents/familyReports/$(request.resource.data.reportId)).data.logIds;
+      allow update: if writable(resource.data) && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'response', 'reviewedAt', 'reviewedBy'])
+        && request.resource.data.status in ['approved', 'rejected'] && request.resource.data.response is string && request.resource.data.response.size() > 0
+        && request.resource.data.reviewedBy == request.auth.uid
+        && (request.resource.data.status == 'rejected' || getAfter(/databases/$(database)/documents/disciplineLogs/$(resource.data.logId)).data.behaviorDescription == resource.data.requestedDescription);
+      allow delete: if false;
+    }
+    match /disciplineTrash/{id} {
+      allow read: if writable(resource.data);
+      allow create: if writable(request.resource.data)
+        && request.resource.data.log == get(/databases/$(database)/documents/disciplineLogs/$(id)).data
+        && request.resource.data.teacherId == request.resource.data.log.teacherId && request.resource.data.classId == request.resource.data.log.classId;
+      allow update: if false;
+      allow delete: if writable(resource.data)
+        && !exists(/databases/$(database)/documents/disciplineLogs/$(id))
+        && getAfter(/databases/$(database)/documents/disciplineLogs/$(id)).data.teacherId == resource.data.teacherId
+        && getAfter(/databases/$(database)/documents/disciplineLogs/$(id)).data.classId == resource.data.classId
+        && getAfter(/databases/$(database)/documents/disciplineLogs/$(id)).data.studentId == resource.data.log.studentId;
+    }
     match /auditLogs/{id} {
       allow read: if admin();
       allow create: if active() && request.resource.data.actorId == request.auth.uid;

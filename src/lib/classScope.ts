@@ -1,6 +1,14 @@
 import type { ClassConfig, SchoolWeek, UserAccount } from '../types';
 import { localDateString } from './logValidation';
 
+export function currentSchoolYear(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: 'numeric' }).formatToParts(date);
+  const year = Number(parts.find(p => p.type === 'year')!.value);
+  const month = Number(parts.find(p => p.type === 'month')!.value);
+  const first = month >= 9 ? year : year - 1;
+  return `${first}-${first + 1}`;
+}
+
 export function monitorMatchesClass(account: UserAccount, config: ClassConfig): boolean {
   return account.role === 'monitor' && (account.classConfigId === config.id
     || account.assignedClassId === (config.classDirectoryId || config.id)

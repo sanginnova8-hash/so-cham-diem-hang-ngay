@@ -20,6 +20,13 @@ import { useApp } from '../../context/AppContext';
 import { BehaviorCategory, Student, BehaviorType } from '../../types';
 import { formatVietnameseDate, removeVietnameseAccents } from '../../lib/utils';
 import { localDateString } from '../../lib/logValidation';
+import { getBehaviorSuggestions } from '../../lib/behaviorSuggestions';
+import { sameLogEntry } from '../../lib/scoreBreakdown';
+import {
+  MORNING_PERIODS,
+  AFTERNOON_PERIODS,
+  OTHER_PERIODS,
+} from '../../lib/schoolPeriods';
 
 interface DailyLogModalV2Props {
   isOpen: boolean;
@@ -38,6 +45,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
 }) => {
   const {
     students,
+    disciplineLogs,
     behaviorCategories,
     classConfig,
     activeAccount,
@@ -93,6 +101,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
     return 'deduct';
   });
   const [categoryGroupFilter, setCategoryGroupFilter] = useState<string>('all');
+  const [behaviorSearch, setBehaviorSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<BehaviorCategory | null>(null);
   const [customDescription, setCustomDescription] = useState<string>('');
   const [customScore, setCustomScore] = useState<number>(1);
@@ -149,6 +158,14 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
       return true;
     });
   }, [behaviorCategories, categoryType, categoryGroupFilter]);
+  const behaviorSuggestions = useMemo(() => getBehaviorSuggestions(filteredCategories, behaviorSearch), [filteredCategories, behaviorSearch]);
+  const recentSuggestions = useMemo(() => {
+    const names = [...disciplineLogs].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).filter(l => l.type === categoryType).map(l => l.behaviorDescription);
+    return [...new Set(names)].flatMap(name => behaviorSuggestions.filter(s => s.name === name)).slice(0, 6);
+  }, [disciplineLogs, categoryType, behaviorSuggestions]);
+  const duplicateStudents = selectedCategory ? disciplineLogs.filter(l => sameLogEntry(l, {
+    studentId: l.studentId, date: eventDate, behaviorCode: selectedCategory.code, behaviorDescription: customDescription || selectedCategory.name, type: categoryType, periodOrTime: lessonPeriod,
+  }) && (logMode === 'single' ? l.studentId === selectedSingleStudent?.id : selectedBulkStudentIds.includes(l.studentId))) : [];
 
   // Distinct groups for category tabs
   const categoryGroups = useMemo(() => {
@@ -183,11 +200,11 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
   };
 
   // Select category
-  const handleSelectCategory = (cat: BehaviorCategory) => {
+  const handleSelectCategory = (cat: BehaviorCategory, name: string) => {
     setSelectedCategory(cat);
     setHasCustomScore(false);
     setCustomScore(cat.defaultScore);
-    setCustomDescription('');
+    setCustomDescription(name);
   };
 
   // Submit Single Log
@@ -319,68 +336,99 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-850">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20">
-              <Calendar className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                  SỔ CHẤM ĐIỂM HÔM NAY V2
-                </h2>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
-                  Lớp {classConfig.className}
-                </span>
+        <div className="px-3.5 sm:px-5 py-3 sm:py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+              <div className="p-1.5 sm:p-2 rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20 shrink-0">
+                <Calendar className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Ghi nhận vi phạm & thành tích rèn luyện tức thì theo thời gian thực
-              </p>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                  <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
+                    Sổ Chấm Điểm Hàng Ngày
+                  </h2>
+                  <span className="text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0">
+                    Lớp {classConfig.className}
+                  </span>
+                </div>
+                <p className="hidden sm:block text-xs text-slate-500 dark:text-slate-400">
+                  Ghi nhận vi phạm & thành tích rèn luyện tức thì theo thời gian thực
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {/* Desktop Mode Switcher */}
+              <div className="hidden sm:flex bg-slate-200 dark:bg-slate-800 p-0.5 rounded-xl text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setLogMode('single')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                    logMode === 'single'
+                      ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  }`}
+                >
+                  <User className="h-3.5 w-3.5" />
+                  <span>1 Học Sinh</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLogMode('bulk')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                    logMode === 'bulk'
+                      ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  }`}
+                >
+                  <Users className="h-3.5 w-3.5" />
+                  <span>Nhiều Học Sinh (Bulk)</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
+                title="Đóng cửa sổ"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Mode Switcher Tabs */}
-            <div className="flex bg-slate-200 dark:bg-slate-800 p-0.5 rounded-xl text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => setLogMode('single')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                  logMode === 'single'
-                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                <User className="h-3.5 w-3.5" />
-                <span>1 Học Sinh</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setLogMode('bulk')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                  logMode === 'bulk'
-                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                <Users className="h-3.5 w-3.5" />
-                <span>Nhiều Học Sinh (Bulk)</span>
-              </button>
-            </div>
-
+          {/* Mobile Mode Switcher Bar (50/50) */}
+          <div className="sm:hidden grid grid-cols-2 bg-slate-200 dark:bg-slate-800 p-1 rounded-xl text-xs font-semibold mt-2.5 gap-1">
             <button
               type="button"
-              onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
+              onClick={() => setLogMode('single')}
+              className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg transition cursor-pointer ${
+                logMode === 'single'
+                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-sm font-bold'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
             >
-              <X className="h-5 w-5" />
+              <User className="h-3.5 w-3.5" />
+              <span>1 Học Sinh</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLogMode('bulk')}
+              className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg transition cursor-pointer ${
+                logMode === 'bulk'
+                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-sm font-bold'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              <Users className="h-3.5 w-3.5" />
+              <span>Cả Nhóm (Bulk)</span>
             </button>
           </div>
         </div>
 
         {/* Period Lock Warning */}
         {isLocked && (
-          <div className="px-5 py-2.5 bg-rose-50 dark:bg-rose-950/50 border-b border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 text-xs flex items-center justify-between gap-3">
+          <div className="px-3.5 sm:px-5 py-2.5 bg-rose-50 dark:bg-rose-950/50 border-b border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 text-xs flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Lock className="h-4 w-4 text-rose-500 shrink-0" />
               <span>
@@ -395,13 +443,13 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
 
         {/* Monitor Role Banner */}
         {isMonitor && (
-          <div className="px-5 py-2.5 bg-blue-50 dark:bg-blue-950/40 border-b border-blue-200 dark:border-blue-900/40 text-blue-900 dark:text-blue-200 text-xs flex items-center justify-between gap-2">
+          <div className="px-3.5 sm:px-5 py-2.5 bg-blue-50 dark:bg-blue-950/40 border-b border-blue-200 dark:border-blue-900/40 text-blue-900 dark:text-blue-200 text-xs flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-bold shrink-0">
                 LỚP TRƯỞNG
               </span>
-              <span>
-                Em đang chấm điểm nề nếp cho Lớp <strong>{classConfig.className}</strong>. Người ghi nhận được hệ thống gắn tự động là <strong>Lớp trưởng {activeAccount?.displayName}</strong>.
+              <span className="truncate">
+                Chấm điểm nề nếp cho Lớp <strong>{classConfig.className}</strong>. Người ghi nhận: <strong>Lớp trưởng {activeAccount?.displayName}</strong>.
               </span>
             </div>
           </div>
@@ -409,7 +457,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
 
         {/* Success Toast inside modal */}
         {toastMessage && (
-          <div className="px-5 py-2 bg-emerald-50 dark:bg-emerald-950/50 border-b border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs flex items-center justify-between">
+          <div className="px-3.5 sm:px-5 py-2 bg-emerald-50 dark:bg-emerald-950/50 border-b border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs flex items-center justify-between">
             <span className="flex items-center gap-1.5 font-semibold">
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
               {toastMessage}
@@ -425,59 +473,116 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
         )}
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 sm:space-y-5">
           {/* Row 1: Session & Period Configuration */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-850/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 bg-slate-50 dark:bg-slate-850/60 p-2.5 sm:p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 text-xs">
             <div>
-              <label className="block text-slate-500 font-semibold mb-1">Ngày ghi nhận</label>
+              <label className="block text-slate-500 font-semibold mb-1 text-[11px] sm:text-xs">Ngày ghi nhận</label>
               <input
                 type="date"
                 value={eventDate}
                 onChange={(e) => setEventDate(e.target.value)}
-                className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-medium"
+                className="w-full px-2 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-medium text-xs"
               />
             </div>
             <div>
-              <label className="block text-slate-500 font-semibold mb-1">Tuần học</label>
+              <label className="block text-slate-500 font-semibold mb-1 text-[11px] sm:text-xs">Tuần học</label>
               <select
                 value={selectedWeek}
                 onChange={(e) => setSelectedWeek(Number(e.target.value))}
-                className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-medium"
+                className="w-full px-2 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-medium text-xs truncate"
               >
                 {classConfig.weeks.map((w) => (
                   <option key={w.weekNumber} value={w.weekNumber}>
-                    Tuần {w.weekNumber} ({w.startDate} - {w.endDate})
+                    Tuần {w.weekNumber} ({w.startDate.slice(5)} ~ {w.endDate.slice(5)})
                   </option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-slate-500 font-semibold mb-1">Tiết / Thời điểm</label>
+              <label className="block text-slate-500 font-semibold mb-1 text-[11px] sm:text-xs">Tiết / Thời điểm</label>
               <select
                 value={lessonPeriod}
                 onChange={(e) => setLessonPeriod(e.target.value)}
-                className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-medium"
+                className="w-full px-2 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-medium text-xs truncate"
               >
-                <option value="Tiết 1">Tiết 1</option>
-                <option value="Tiết 2">Tiết 2</option>
-                <option value="Tiết 3">Tiết 3</option>
-                <option value="Tiết 4">Tiết 4</option>
-                <option value="Tiết 5">Tiết 5</option>
-                <option value="Tiết sinh hoạt">Tiết sinh hoạt</option>
-                <option value="Giờ ra chơi">Giờ ra chơi</option>
-                <option value="Ký túc xá">Ký túc xá / Buổi tối</option>
-                <option value="Chào cờ">Chào cờ đầu tuần</option>
+                <optgroup label="☀️ Buổi Sáng (5 tiết)">
+                  {MORNING_PERIODS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="🌤️ Buổi Chiều (5 tiết)">
+                  {AFTERNOON_PERIODS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="📌 Thời điểm khác / Nội vụ">
+                  {OTHER_PERIODS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </div>
             <div>
-              <label className="block text-slate-500 font-semibold mb-1">Người ghi nhận</label>
+              <label className="block text-slate-500 font-semibold mb-1 text-[11px] sm:text-xs">Người ghi nhận</label>
               <input
                 type="text"
                 value={reporter}
                 onChange={(e) => setReporter(e.target.value)}
-                placeholder="GVCN / Cán bộ trực"
-                className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-medium"
+                placeholder="GVCN / Lớp trưởng"
+                className="w-full px-2 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-medium text-xs truncate"
               />
+            </div>
+          </div>
+
+          {/* Quick Period Selector Chips (Sáng: T1-T5 • Chiều: T6-T10) */}
+          <div className="flex flex-wrap items-center justify-between gap-1.5 p-2 bg-slate-100/70 dark:bg-slate-800/50 rounded-xl text-[11px]">
+            <div className="flex items-center gap-1 overflow-x-auto">
+              <span className="font-bold text-amber-600 dark:text-amber-400 shrink-0 mr-1 flex items-center gap-0.5">
+                ☀️ Sáng:
+              </span>
+              {MORNING_PERIODS.slice(0, 5).map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setLessonPeriod(p.value)}
+                  className={`px-2 py-0.5 rounded-md font-semibold transition ${
+                    lessonPeriod === p.value
+                      ? 'bg-amber-500 text-white shadow-xs'
+                      : 'bg-white dark:bg-slate-700 hover:bg-amber-100 dark:hover:bg-amber-950/50 text-slate-700 dark:text-slate-300'
+                  }`}
+                  title={p.label}
+                >
+                  {p.shortLabel}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-1 overflow-x-auto">
+              <span className="font-bold text-sky-600 dark:text-sky-400 shrink-0 mr-1 flex items-center gap-0.5">
+                🌤️ Chiều:
+              </span>
+              {AFTERNOON_PERIODS.slice(0, 5).map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setLessonPeriod(p.value)}
+                  className={`px-2 py-0.5 rounded-md font-semibold transition ${
+                    lessonPeriod === p.value
+                      ? 'bg-sky-500 text-white shadow-xs'
+                      : 'bg-white dark:bg-slate-700 hover:bg-sky-100 dark:hover:bg-sky-950/50 text-slate-700 dark:text-slate-300'
+                  }`}
+                  title={p.label}
+                >
+                  {p.shortLabel}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -488,7 +593,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
                 <Search className="h-3.5 w-3.5 text-blue-600" />
                 {logMode === 'single'
                   ? 'Bước 1: Tìm & Chọn Học Sinh'
-                  : `Bước 1: Chọn Các Học Sinh Cần Chấm Điểm (${selectedBulkStudentIds.length} đã chọn)`}
+                  : `Bước 1: Chọn Các Học Sinh (${selectedBulkStudentIds.length} đã chọn)`}
               </span>
               {logMode === 'bulk' && (
                 <div className="flex gap-2">
@@ -497,7 +602,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
                     onClick={handleSelectAllFiltered}
                     className="text-[11px] text-blue-600 hover:underline font-semibold"
                   >
-                    Chọn tất cả danh sách
+                    Chọn tất cả
                   </button>
                   <span className="text-slate-300">|</span>
                   <button
@@ -517,13 +622,13 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
                 type="text"
                 value={studentSearch}
                 onChange={(e) => setStudentSearch(e.target.value)}
-                placeholder="Tìm nhanh theo Mã học sinh (vd: 419, HS01...) hoặc Họ tên..."
+                placeholder="Tìm tên hoặc mã HS (vd: 419, Lan, Sang...)"
                 className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
 
             {/* Students List Grid */}
-            <div className="max-h-36 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 p-1 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/50">
+            <div className="max-h-40 sm:max-h-36 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5 sm:gap-2 p-1 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/50">
               {filteredStudents.map((st) => {
                 const isSelected =
                   logMode === 'single'
@@ -545,8 +650,8 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
                         : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 text-slate-700 dark:text-slate-300'
                     }`}
                   >
-                    <div className="truncate">
-                      <div className="font-mono text-[10px] text-slate-400">{st.studentCode}</div>
+                    <div className="truncate min-w-0">
+                      <div className="font-mono text-[10px] text-slate-400 truncate">{st.studentCode}</div>
                       <div className="truncate font-semibold">{st.fullName}</div>
                     </div>
                     {isSelected && (
@@ -560,22 +665,24 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
 
           {/* Row 3: Behavior Category & Points */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <Layers className="h-3.5 w-3.5 text-blue-600" />
                 Bước 2: Chọn Hành Vi Vi Phạm / Khen Thưởng
               </span>
 
               {/* Type Switcher */}
-              <div className="flex gap-1 bg-slate-200 dark:bg-slate-800 p-0.5 rounded-lg text-xs">
+              <div className="grid grid-cols-2 gap-1 bg-slate-200 dark:bg-slate-800 p-0.5 rounded-lg text-xs w-full sm:w-auto">
                 <button
                   type="button"
                   disabled={!canAddViolations}
                   onClick={() => {
                     setCategoryType('deduct');
                     setSelectedCategory(null);
+                    setCustomDescription('');
+                    setCategoryGroupFilter('all');
                   }}
-                  className={`px-3 py-1 rounded-md transition font-bold ${
+                  className={`px-3 py-1.5 rounded-md transition font-bold text-center ${
                     categoryType === 'deduct'
                       ? 'bg-rose-600 text-white shadow'
                       : !canAddViolations
@@ -592,8 +699,10 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
                   onClick={() => {
                     setCategoryType('bonus');
                     setSelectedCategory(null);
+                    setCustomDescription('');
+                    setCategoryGroupFilter('all');
                   }}
-                  className={`px-3 py-1 rounded-md transition font-bold ${
+                  className={`px-3 py-1.5 rounded-md transition font-bold text-center ${
                     categoryType === 'bonus'
                       ? 'bg-emerald-600 text-white shadow'
                       : !canAddBonuses
@@ -607,12 +716,18 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
               </div>
             </div>
 
-            {/* Category Groups Pills */}
-            <div className="flex flex-wrap gap-1.5">
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Tìm hành vi cụ thể
+              <input type="search" value={behaviorSearch} onChange={e => setBehaviorSearch(e.target.value)}
+                placeholder="Gõ nghỉ học, đi muộn, điện thoại, phát biểu..."
+                className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs" />
+            </label>
+            {/* Category Groups Pills with smooth horizontal scrolling */}
+            <div className="flex gap-1.5 overflow-x-auto pb-1 text-xs">
               <button
                 type="button"
                 onClick={() => setCategoryGroupFilter('all')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition shrink-0 cursor-pointer ${
                   categoryGroupFilter === 'all'
                     ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
@@ -625,7 +740,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
                   type="button"
                   key={grp}
                   onClick={() => setCategoryGroupFilter(grp)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition shrink-0 cursor-pointer ${
                     categoryGroupFilter === grp
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
@@ -637,14 +752,17 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
             </div>
 
             {/* Categories Grid */}
+            {!behaviorSearch && recentSuggestions.length > 0 && <div className="flex flex-wrap gap-1.5 text-xs"><span className="text-slate-500 text-[11px]">Dùng gần đây:</span>{recentSuggestions.map(({ category, name }) => <button type="button" key={`${category.id}:${name}`} onClick={() => handleSelectCategory(category, name)} className="border border-blue-200 dark:border-blue-900/50 rounded-lg px-2 py-0.5 text-blue-600 dark:text-blue-400 text-[11px] font-medium">{name}</button>)}</div>}
+            {selectedCategory && <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">Đã chọn: {customDescription} • {categoryType === 'deduct' ? '−' : '+'}{Math.round(customScore * count * 100) / 100}đ ({count} lần)</p>}
+            {duplicateStudents.length > 0 && <p role="alert" className="text-xs text-rose-600 font-semibold">Đã có bản ghi cùng ngày, tiết và hành vi của {duplicateStudents.map(l => l.studentName).join(', ')}. Hãy sửa bản ghi cũ hoặc tăng số lần.</p>}
             <div className="max-h-44 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-              {filteredCategories.map((cat) => {
-                const isCatSelected = selectedCategory?.id === cat.id;
+              {behaviorSuggestions.map(({ category: cat, name }) => {
+                const isCatSelected = selectedCategory?.id === cat.id && customDescription === name;
                 return (
                   <button
                     type="button"
-                    key={cat.id}
-                    onClick={() => handleSelectCategory(cat)}
+                    key={`${cat.id}:${name}`}
+                    onClick={() => handleSelectCategory(cat, name)}
                     className={`p-2.5 rounded-xl border text-left transition flex items-start justify-between gap-2 text-xs cursor-pointer ${
                       isCatSelected
                         ? categoryType === 'deduct'
@@ -654,7 +772,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
                     }`}
                   >
                     <div>
-                      <div className="font-semibold">{cat.name}</div>
+                      <div className="font-semibold">{name}</div>
                       <div className="text-[10px] text-slate-400 mt-0.5">{cat.code}</div>
                     </div>
                     <span
@@ -669,38 +787,39 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
                   </button>
                 );
               })}
+              {behaviorSuggestions.length === 0 && <p className="col-span-full text-xs text-slate-500 p-3">Không tìm thấy hành vi phù hợp. Thử từ khóa khác hoặc chọn Tất cả nhóm.</p>}
             </div>
           </div>
 
           {/* Row 4: Custom Description, Score & Count */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 dark:bg-slate-850/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 text-xs">
-            <div className="sm:col-span-1">
-              <label className="block text-slate-500 font-semibold mb-1">
-                Điểm áp dụng ({categoryType === 'deduct' ? 'Trừ' : 'Cộng'})
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3 bg-slate-50 dark:bg-slate-850/60 p-2.5 sm:p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 text-xs">
+            <div>
+              <label className="block text-slate-500 font-semibold mb-1 text-[11px] sm:text-xs">
+                Điểm ({categoryType === 'deduct' ? 'Trừ' : 'Cộng'})
               </label>
               <input
                 type="number"
                 step="0.5"
-                min="0.5"
-                max="10"
+                min="0.1"
+                max="100"
                 value={customScore}
                 onChange={(e) => { setHasCustomScore(true); setCustomScore(Number(e.target.value)); }}
                 className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono font-bold text-sm"
               />
             </div>
-            <div className="sm:col-span-1">
-              <label className="block text-slate-500 font-semibold mb-1">Số lần</label>
+            <div>
+              <label className="block text-slate-500 font-semibold mb-1 text-[11px] sm:text-xs">Số lần</label>
               <input
                 type="number"
                 min="1"
-                max="10"
+                max="100"
                 value={count}
                 onChange={(e) => setCount(Number(e.target.value))}
                 className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono font-bold text-sm"
               />
             </div>
-            <div className="sm:col-span-1">
-              <label className="block text-slate-500 font-semibold mb-1">Ghi chú cụ thể (Tùy chọn)</label>
+            <div className="col-span-2 sm:col-span-1">
+              <label className="block text-slate-500 font-semibold mb-1 text-[11px] sm:text-xs">Ghi chú cụ thể (Tùy chọn)</label>
               <input
                 type="text"
                 value={note}
@@ -715,26 +834,26 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
 
         {/* Footer Actions */}
         {(errorMessage || toastMessage) && (
-          <div role={errorMessage ? 'alert' : 'status'} aria-live="polite" className={`shrink-0 px-5 py-2 text-xs font-semibold border-t ${errorMessage ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+          <div role={errorMessage ? 'alert' : 'status'} aria-live="polite" className={`shrink-0 px-4 sm:px-5 py-2 text-xs font-semibold border-t ${errorMessage ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
             {errorMessage || toastMessage}
           </div>
         )}
-        <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none">
+        <div className="px-3.5 sm:px-5 py-3 sm:py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
+          <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={keepContextOpen}
               onChange={(e) => setKeepContextOpen(e.target.checked)}
               className="rounded text-blue-600 focus:ring-blue-500"
             />
-            <span>Tiếp tục chấm học sinh khác (Giữ lại ngày, tiết & hành vi)</span>
+            <span className="truncate">Tiếp tục chấm học sinh khác (giữ ngày & tiết)</span>
           </label>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 sm:flex-none px-4 py-2 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold rounded-xl transition cursor-pointer"
+              className="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold rounded-xl transition cursor-pointer"
             >
               Đóng
             </button>
@@ -742,9 +861,9 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
             {logMode === 'single' ? (
               <button
                 type="button"
-                disabled={isLocked || isSubmitting || !selectedSingleStudent}
+                disabled={isLocked || isSubmitting || !selectedSingleStudent || duplicateStudents.length > 0}
                 onClick={handleSubmitSingle}
-                className="flex-1 sm:flex-none px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+                className="flex-1 sm:flex-none px-5 py-2.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Check className="h-4 w-4" />
                 <span>{isSubmitting ? 'Đang lưu...' : 'Lưu Ghi Nhận'}</span>
@@ -752,12 +871,12 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
             ) : (
               <button
                 type="button"
-                disabled={isLocked || isSubmitting || selectedBulkStudentIds.length === 0}
+                disabled={isLocked || isSubmitting || selectedBulkStudentIds.length === 0 || duplicateStudents.length > 0}
                 onClick={() => setShowBulkConfirm(true)}
-                className="flex-1 sm:flex-none px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+                className="flex-1 sm:flex-none px-5 py-2.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Users className="h-4 w-4" />
-                <span>Áp Dụng Cho {selectedBulkStudentIds.length} Học Sinh</span>
+                <span>Áp Dụng Cho {selectedBulkStudentIds.length} HS</span>
               </button>
             )}
           </div>
@@ -792,7 +911,7 @@ export const DailyLogModalV2: React.FC<DailyLogModalV2Props> = ({
               <div className="flex justify-between">
                 <span className="text-slate-500">Nội dung hành vi:</span>
                 <span className="font-bold text-slate-900 dark:text-white text-right">
-                  {selectedCategory?.name || customDescription}
+                  {customDescription || selectedCategory?.name}
                 </span>
               </div>
               <div className="flex justify-between">

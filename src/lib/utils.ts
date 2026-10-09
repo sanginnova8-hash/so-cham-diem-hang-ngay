@@ -1,5 +1,59 @@
 import * as XLSX from 'xlsx';
-import { RankLevel } from '../types';
+import { RankLevel, RankThresholds } from '../types';
+
+/**
+ * Mẫu ngưỡng xếp loại rèn luyện thi đua mặc định (chuẩn 10A8 - CĐN1-BQP)
+ */
+export const DEFAULT_RANK_THRESHOLDS: RankThresholds = {
+  xuatSac: 12,
+  tot: 8,
+  kha: 7,
+  dat: 5,
+  xuatSacNote: 'Bốc thăm phần thưởng',
+  khongDatNote: 'Bốc thăm hình phạt',
+};
+
+/**
+ * Lấy ngưỡng điểm có hiệu lực (fallback về mặc định nếu thiếu hoặc undefined)
+ */
+export function getEffectiveRankThresholds(thresholds?: RankThresholds): RankThresholds {
+  return {
+    xuatSac: thresholds?.xuatSac ?? DEFAULT_RANK_THRESHOLDS.xuatSac,
+    tot: thresholds?.tot ?? DEFAULT_RANK_THRESHOLDS.tot,
+    kha: thresholds?.kha ?? DEFAULT_RANK_THRESHOLDS.kha,
+    dat: thresholds?.dat ?? DEFAULT_RANK_THRESHOLDS.dat,
+    xuatSacNote: thresholds?.xuatSacNote || DEFAULT_RANK_THRESHOLDS.xuatSacNote,
+    khongDatNote: thresholds?.khongDatNote || DEFAULT_RANK_THRESHOLDS.khongDatNote,
+  };
+}
+
+/**
+ * Mô tả khoảng điểm xếp loại (Ví dụ: "≥ 12.0đ", "8.0 – 11.9đ", "< 5.0đ")
+ */
+export function getRankRangeDescription(rank: RankLevel, thresholds?: RankThresholds): string {
+  const t = getEffectiveRankThresholds(thresholds);
+  const format = (n: number) => Number.isInteger(n) ? `${n}.0` : `${n}`;
+  switch (rank) {
+    case 'Xuất sắc':
+      return `≥ ${format(t.xuatSac)}đ`;
+    case 'Tốt': {
+      const upper = t.xuatSac > t.tot ? format(Math.round((t.xuatSac - 0.1) * 10) / 10) : format(t.tot);
+      return `${format(t.tot)} – ${upper}đ`;
+    }
+    case 'Khá': {
+      const upper = t.tot > t.kha ? format(Math.round((t.tot - 0.1) * 10) / 10) : format(t.kha);
+      return `${format(t.kha)} – ${upper}đ`;
+    }
+    case 'Đạt':
+    case 'Trung bình': {
+      const upper = t.kha > t.dat ? format(Math.round((t.kha - 0.1) * 10) / 10) : format(t.dat);
+      return `${format(t.dat)} – ${upper}đ`;
+    }
+    case 'Không đạt':
+    case 'Yếu':
+      return `< ${format(t.dat)}đ`;
+  }
+}
 
 /**
  * Remove Vietnamese accents for loose search / matching
@@ -52,27 +106,29 @@ export function formatVietnameseNumber(num: number, maxDecimals: number = 2): st
 }
 
 /**
- * Calculate rank level according to prompt:
- * - Xuất sắc: từ 9 đến 10
- * - Tốt: từ 8 đến dưới 9
- * - Khá: từ 7 đến dưới 8
- * - Trung bình: từ 5 đến dưới 7
- * - Yếu: dưới 5
+ * Calculate rank level according to tiêu chuẩn xếp loại rèn luyện thi đua:
+ * - Xuất sắc: Từ ngưỡng xuatSac (mặc định 12 điểm)
+ * - Tốt: Từ ngưỡng tot (mặc định 8 điểm) đến dưới xuatSac
+ * - Khá: Từ ngưỡng kha (mặc định 7 điểm) đến dưới tot
+ * - Đạt: Từ ngưỡng dat (mặc định 5 điểm) đến dưới kha
+ * - Không đạt: Dưới ngưỡng dat (mặc định dưới 5 điểm)
  */
-export function calculateRank(score: number): RankLevel {
-  if (score >= 9) return 'Xuất sắc';
-  if (score >= 8) return 'Tốt';
-  if (score >= 7) return 'Khá';
-  if (score >= 5) return 'Trung bình';
-  return 'Yếu';
+export function calculateRank(score: number, thresholds?: RankThresholds): RankLevel {
+  const t = getEffectiveRankThresholds(thresholds);
+  if (score >= t.xuatSac) return 'Xuất sắc';
+  if (score >= t.tot) return 'Tốt';
+  if (score >= t.kha) return 'Khá';
+  if (score >= t.dat) return 'Đạt';
+  return 'Không đạt';
 }
 
 /**
- * Clamp score between min and max (defaults 0 to 10)
+ * Clamp score to at least min (default 0). No upper limit unless max is explicitly specified.
  */
-export function clampScore(score: number, min: number = 0, max: number = 10): number {
+export function clampScore(score: number, min: number = 0, max?: number): number {
   const rounded = Math.round(score * 100) / 100;
-  return Math.max(min, Math.min(max, rounded));
+  const lower = Math.max(min, rounded);
+  return max !== undefined ? Math.min(max, lower) : lower;
 }
 
 /**
@@ -86,8 +142,10 @@ export function getRankBadgeClass(rank: RankLevel): { bg: string; text: string; 
       return { bg: 'bg-blue-50 dark:bg-blue-950/40', text: 'text-blue-700 dark:text-blue-400', border: 'border-blue-200 dark:border-blue-800' };
     case 'Khá':
       return { bg: 'bg-amber-50 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-400', border: 'border-amber-200 dark:border-amber-800' };
+    case 'Đạt':
     case 'Trung bình':
       return { bg: 'bg-orange-50 dark:bg-orange-950/40', text: 'text-orange-700 dark:text-orange-400', border: 'border-orange-200 dark:border-orange-800' };
+    case 'Không đạt':
     case 'Yếu':
       return { bg: 'bg-rose-50 dark:bg-rose-950/40', text: 'text-rose-700 dark:text-rose-400', border: 'border-rose-200 dark:border-rose-800' };
   }
@@ -244,6 +302,20 @@ export function downloadDisciplineLogTemplate() {
       'Người ghi nhận': 'GV Bộ môn',
       'Căn cứ / Quy định': 'Tiêu chí thi đua học tập',
       'Ghi chú': 'Giải bài tập nâng cao lên bảng',
+    },
+    {
+      'Ngày': '2026-09-25',
+      'Mã học sinh': 'HS10A804',
+      'Họ và tên': 'Vũ Đức Cường',
+      'Mã vi phạm': 'THX',
+      'Nội dung lỗi': 'Vệ sinh máy và bàn giao xưởng thực hành xuất sắc',
+      'Loại': 'Cộng điểm',
+      'Điểm': 1,
+      'Số lần': 1,
+      'Tiết / Thời điểm': 'Tiết 7 (Tiết 2 Chiều)',
+      'Người ghi nhận': 'GV Hướng dẫn Xưởng',
+      'Căn cứ / Quy định': 'Nội quy an toàn xưởng thực hành',
+      'Ghi chú': 'Buổi chiều thực hành nghề',
     },
   ];
   exportToExcel(template, 'Mau_nhap_nhat_ky_ne_nep_10A8', 'NhatKyLoi');

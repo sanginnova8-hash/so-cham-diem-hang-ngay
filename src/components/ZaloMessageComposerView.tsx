@@ -43,12 +43,15 @@ import {
   saveStoredCustomTemplates,
 } from '../lib/zaloMessageTemplates';
 import { formatVietnameseDate, formatVietnameseNumber } from '../lib/utils';
+import { currentSchoolWeek } from '../lib/weeklyPeriod';
 import { TabType } from './Navbar';
 
 interface ZaloMessageComposerViewProps {
   initialStudentId?: string | null;
   initialWeek?: number;
   initialMonth?: number;
+  initialPeriodMode?: 'week' | 'month';
+  initialTemplateId?: string;
   onNavigateTab?: (tab: TabType) => void;
 }
 
@@ -56,6 +59,8 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
   initialStudentId,
   initialWeek,
   initialMonth,
+  initialPeriodMode,
+  initialTemplateId,
   onNavigateTab,
 }) => {
   const {
@@ -66,10 +71,20 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
     getMonthlySummary,
   } = useApp();
 
+  const currentSchoolWk = useMemo(() => currentSchoolWeek(classConfig.weeks), [classConfig.weeks]);
+
   // Period state
-  const [periodMode, setPeriodMode] = useState<'week' | 'month'>('week');
-  const [selectedMonth, setSelectedMonth] = useState<number>(initialMonth || 9);
-  const [selectedWeek, setSelectedWeek] = useState<number>(initialWeek || 1);
+  const [periodMode, setPeriodMode] = useState<'week' | 'month'>(() => {
+    if (initialPeriodMode) return initialPeriodMode;
+    if (initialMonth && !initialWeek) return 'month';
+    return 'week';
+  });
+  const [selectedMonth, setSelectedMonth] = useState<number>(() => {
+    return initialMonth || currentSchoolWk?.month || 9;
+  });
+  const [selectedWeek, setSelectedWeek] = useState<number>(() => {
+    return initialWeek || currentSchoolWk?.weekNumber || 1;
+  });
 
   // Target mode: class_group or individual_parent
   const [targetMode, setTargetMode] = useState<TemplateTarget>(
@@ -78,7 +93,9 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
 
   // Templates
   const [customTemplates, setCustomTemplates] = useState<ZaloMessageTemplate[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('weekly_class_group');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
+    initialTemplateId || (periodMode === 'month' ? 'monthly_class_group' : 'weekly_class_group')
+  );
 
   // Load custom templates from localStorage
   useEffect(() => {
@@ -90,17 +107,24 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
     return [...DEFAULT_ZALO_TEMPLATES, ...customTemplates];
   }, [customTemplates]);
 
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
   // Filter templates matching current target mode
-  const filteredTemplates = useMemo(() => {
+  const targetTemplates = useMemo(() => {
     return allTemplates.filter((t) => t.target === targetMode);
   }, [allTemplates, targetMode]);
+
+  const filteredTemplates = useMemo(() => {
+    if (categoryFilter === 'all') return targetTemplates;
+    return targetTemplates.filter((t) => t.category === categoryFilter);
+  }, [targetTemplates, categoryFilter]);
 
   // Current template
   const currentTemplate = useMemo(() => {
     const found = allTemplates.find((t) => t.id === selectedTemplateId);
     if (found) return found;
-    return filteredTemplates[0] || DEFAULT_ZALO_TEMPLATES[0];
-  }, [allTemplates, selectedTemplateId, filteredTemplates]);
+    return targetTemplates[0] || DEFAULT_ZALO_TEMPLATES[0];
+  }, [allTemplates, selectedTemplateId, targetTemplates]);
 
   // Template options
   const [options, setOptions] = useState<TemplateOptions>(() => currentTemplate.defaultOptions);
@@ -108,24 +132,83 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
   // Raw editor content (editable by teacher)
   const [rawContent, setRawContent] = useState<string>(() => currentTemplate.contentTemplate);
 
-  // When switching templates or target mode
+  // Sync when initial navigation parameters change
   useEffect(() => {
-    // If current template doesn't match target mode, pick the first appropriate template
+    if (initialMonth !== undefined) setSelectedMonth(initialMonth);
+    if (initialWeek !== undefined) setSelectedWeek(initialWeek);
+    if (initialPeriodMode !== undefined) setPeriodMode(initialPeriodMode);
+    if (initialStudentId) {
+      setSelectedStudentId(initialStudentId);
+      setTargetMode('individual_parent');
+    }
+    if (initialTemplateId) {
+      setSelectedTemplateId(initialTemplateId);
+      const match = allTemplates.find((t) => t.id === initialTemplateId);
+      if (match) {
+        setOptions(match.defaultOptions);
+        setRawContent(match.contentTemplate);
+        if (match.period === 'week' || match.period === 'month') {
+          setPeriodMode(match.period);
+        }
+      }
+    }
+  }, [initialMonth, initialWeek, initialPeriodMode, initialStudentId, initialTemplateId, allTemplates]);
+
+  // When switching target mode
+  useEffect(() => {
+    setCategoryFilter('all');
     if (currentTemplate.target !== targetMode) {
-      const match = filteredTemplates[0];
+      const match = targetTemplates.find((t) => t.period === periodMode) || targetTemplates[0];
       if (match) {
         setSelectedTemplateId(match.id);
         setOptions(match.defaultOptions);
         setRawContent(match.contentTemplate);
-        return;
       }
     }
-  }, [targetMode, currentTemplate, filteredTemplates]);
+  }, [targetMode]);
 
+  // Select a template: automatically sync periodMode to template.period!
   const handleSelectTemplate = (template: ZaloMessageTemplate) => {
     setSelectedTemplateId(template.id);
     setOptions(template.defaultOptions);
     setRawContent(template.contentTemplate);
+    if (template.period === 'week' || template.period === 'month') {
+      setPeriodMode(template.period);
+    }
+  };
+
+  // Switch periodMode: automatically select matching template if needed
+  const handleSwitchPeriodMode = (mode: 'week' | 'month') => {
+    setPeriodMode(mode);
+    if (currentTemplate.period !== mode) {
+      const matching = targetTemplates.find((t) => t.period === mode) || targetTemplates[0];
+      if (matching) {
+        setSelectedTemplateId(matching.id);
+        setOptions(matching.defaultOptions);
+        setRawContent(matching.contentTemplate);
+      }
+    }
+  };
+
+  // Select month: automatically sync week to a week in that month
+  const handleSelectMonth = (newMonth: number) => {
+    setSelectedMonth(newMonth);
+    const weeksInMonth = classConfig.weeks.filter((w) => w.month === newMonth);
+    if (weeksInMonth.length > 0) {
+      const currentInMonth = weeksInMonth.some((w) => w.weekNumber === selectedWeek);
+      if (!currentInMonth) {
+        setSelectedWeek(weeksInMonth[0].weekNumber);
+      }
+    }
+  };
+
+  // Select week: automatically sync month
+  const handleSelectWeek = (newWeek: number) => {
+    setSelectedWeek(newWeek);
+    const weekObj = classConfig.weeks.find((w) => w.weekNumber === newWeek);
+    if (weekObj && weekObj.month !== selectedMonth) {
+      setSelectedMonth(weekObj.month);
+    }
   };
 
   // Student selection for 1-on-1 mode
@@ -139,16 +222,16 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
     return students.find((s) => s.id === selectedStudentId) || students[0] || null;
   }, [students, selectedStudentId]);
 
-  // Summaries
+  // Summaries strictly reactive to disciplineLogs
   const weeklySummaries = useMemo(() => {
     return getWeeklySummary(selectedWeek, selectedMonth);
-  }, [getWeeklySummary, selectedWeek, selectedMonth]);
+  }, [getWeeklySummary, selectedWeek, selectedMonth, disciplineLogs]);
 
   const monthlySummaries = useMemo(() => {
     return getMonthlySummary(selectedMonth);
-  }, [getMonthlySummary, selectedMonth]);
+  }, [getMonthlySummary, selectedMonth, disciplineLogs]);
 
-  // Student list filtering
+  // Current summaries based on periodMode
   const currentSummaries = periodMode === 'week' ? weeklySummaries : monthlySummaries;
 
   const filteredStudentList = useMemo(() => {
@@ -411,7 +494,7 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
             <div className="flex bg-slate-100 dark:bg-slate-700/60 p-1 rounded-xl text-xs font-semibold">
               <button
                 type="button"
-                onClick={() => setPeriodMode('week')}
+                onClick={() => handleSwitchPeriodMode('week')}
                 className={`px-3 py-1.5 rounded-lg transition ${
                   periodMode === 'week'
                     ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
@@ -422,7 +505,7 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
               </button>
               <button
                 type="button"
-                onClick={() => setPeriodMode('month')}
+                onClick={() => handleSwitchPeriodMode('month')}
                 className={`px-3 py-1.5 rounded-lg transition ${
                   periodMode === 'month'
                     ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
@@ -438,7 +521,7 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
               <span className="text-slate-500 font-medium">Tháng:</span>
               <select
                 value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                onChange={(e) => handleSelectMonth(Number(e.target.value))}
                 className="bg-transparent font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
               >
                 {classConfig.months.map((m) => (
@@ -454,7 +537,7 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
                 <span className="text-slate-500 font-medium">Tuần:</span>
                 <select
                   value={selectedWeek}
-                  onChange={(e) => setSelectedWeek(Number(e.target.value))}
+                  onChange={(e) => handleSelectWeek(Number(e.target.value))}
                   className="bg-transparent font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
                 >
                   {availableWeeks.map((w) => (
@@ -491,37 +574,96 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
               </button>
             </div>
 
+            {/* Category Filter Chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+              {(targetMode === 'class_group'
+                ? [
+                    { id: 'all', label: 'Tất cả' },
+                    { id: 'weekly', label: '📅 Tuần' },
+                    { id: 'monthly', label: '📊 Tháng' },
+                    { id: 'discipline', label: '🛡️ Kỷ luật' },
+                    { id: 'honors', label: '🏆 Tuyên dương' },
+                    { id: 'notice', label: '📢 Thông báo' },
+                  ]
+                : [
+                    { id: 'all', label: 'Tất cả' },
+                    { id: 'individual', label: '📋 Báo cáo HS' },
+                    { id: 'discipline', label: '⚠️ Nhắc nhở' },
+                    { id: 'honors', label: '🌟 Thư khen' },
+                    { id: 'notice', label: '🤝 Mời trao đổi' },
+                  ]
+              ).map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setCategoryFilter(cat.id)}
+                  className={`px-2.5 py-1 rounded-lg font-medium whitespace-nowrap transition text-[11px] ${
+                    categoryFilter === cat.id
+                      ? 'bg-blue-600 text-white font-bold shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-650 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {filteredTemplates.map((template) => {
                 const isSelected = template.id === currentTemplate.id;
+                const getBadge = (cat: string) => {
+                  switch (cat) {
+                    case 'weekly':
+                      return { label: 'Tuần', style: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' };
+                    case 'monthly':
+                      return { label: 'Tháng', style: 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300' };
+                    case 'discipline':
+                      return { label: 'Kỷ luật', style: 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300' };
+                    case 'honors':
+                      return { label: 'Tuyên dương', style: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300' };
+                    case 'notice':
+                      return { label: 'Thông báo', style: 'bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-300' };
+                    case 'individual':
+                      return { label: 'Gửi riêng', style: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300' };
+                    default:
+                      return { label: 'Tự tạo', style: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300' };
+                  }
+                };
+                const badge = getBadge(template.category);
+
                 return (
                   <div
                     key={template.id}
                     onClick={() => handleSelectTemplate(template)}
-                    className={`p-3 rounded-xl border text-left cursor-pointer transition-all relative ${
+                    className={`p-3 rounded-xl border text-left cursor-pointer transition-all relative flex flex-col justify-between ${
                       isSelected
                         ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/40 ring-1 ring-blue-500 shadow-xs'
                         : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-750'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-1">
+                    <div>
+                      <div className="flex items-start justify-between gap-1 mb-1">
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${badge.style}`}>
+                          {badge.label}
+                        </span>
+                        {template.isCustom && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteCustomTemplate(template.id, e)}
+                            className="text-slate-400 hover:text-rose-500 p-0.5 rounded transition"
+                            title="Xóa mẫu tự tạo này"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                       <h4 className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">
                         {template.title}
                       </h4>
-                      {template.isCustom && (
-                        <button
-                          type="button"
-                          onClick={(e) => handleDeleteCustomTemplate(template.id, e)}
-                          className="text-slate-400 hover:text-rose-500 p-0.5 rounded transition"
-                          title="Xóa mẫu tự tạo này"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-1">
+                        {template.description}
+                      </p>
                     </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-1">
-                      {template.description}
-                    </p>
                   </div>
                 );
               })}
@@ -737,6 +879,16 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
                 />
                 <span>Thông tin & SĐT GVCN</span>
               </label>
+
+              <label className="flex items-center gap-2 cursor-pointer select-none" title="Chèn thêm bảng điểm tóm tắt của cả lớp ở cuối tin nhắn">
+                <input
+                  type="checkbox"
+                  checked={options.includeMiniScoreTable}
+                  onChange={(e) => setOptions({ ...options, includeMiniScoreTable: e.target.checked })}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
+                />
+                <span className="text-blue-700 dark:text-blue-400 font-medium">Bảng điểm cả lớp</span>
+              </label>
             </div>
 
             {/* Custom Next Week Plan / Extra Note Input */}
@@ -761,8 +913,8 @@ export const ZaloMessageComposerView: React.FC<ZaloMessageComposerViewProps> = (
                 <Sparkles className="h-3.5 w-3.5 text-amber-500" />
                 <span>Thanh Chèn Số Liệu Thông Minh (Bấm để chèn vào vị trí con trỏ)</span>
               </span>
-              <div className="flex items-center gap-1">
-                {['📢', '⭐', '🏆', '📌', '⚠️', '✨', '👏', '👨‍🏫'].map((emoji) => (
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+                {['📊', '⭐', '🏆', '📌', '⚠️', '🎖️', '🔔', '💬', '👏', '👨‍🏫', '📢', '✅'].map((emoji) => (
                   <button
                     key={emoji}
                     type="button"

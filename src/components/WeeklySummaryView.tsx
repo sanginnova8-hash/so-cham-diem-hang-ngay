@@ -31,6 +31,9 @@ import {
   Search,
   Share2,
   MessageSquareText,
+  ArrowRightLeft,
+  FileSpreadsheet,
+  UserX,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { AchievementBonusRule, StudentWeeklySummary, DisciplineLog } from '../types';
@@ -47,15 +50,27 @@ import { SummaryZaloExportModal } from './SummaryZaloExportModal';
 import { PeriodLockBannerV2 } from './v2/PeriodLockBannerV2';
 import { DailyLogModalV2 } from './v2/DailyLogModalV2';
 import { StudentPointEditor } from './StudentPointEditor';
+import { ScoreExplanation } from './ScoreExplanation';
+import { PeriodReview } from './PeriodReview';
+import { currentSchoolYear } from '../lib/classScope';
+import { isMonthlyBonus } from '../lib/scoreBreakdown';
 
 interface WeeklySummaryViewProps {
   onNavigateTab: (tab: TabType) => void;
   onSelectStudentForReport?: (studentId: string, period?: ReportPeriodSelection) => void;
+  onNavigateToZalo?: (params: {
+    studentId?: string | null;
+    week?: number;
+    month?: number;
+    mode?: 'week' | 'month';
+    templateId?: string;
+  }) => void;
 }
 
 export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
   onNavigateTab,
   onSelectStudentForReport,
+  onNavigateToZalo,
 }) => {
   const {
     classConfig,
@@ -68,6 +83,8 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
     revokeAchievementBonus,
     updateDisciplineLog,
     deleteDisciplineLog,
+    moveDisciplineLogToWeek,
+    batchMoveDisciplineLogsToWeek,
     activeAccount,
   } = useApp();
 
@@ -75,7 +92,9 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
   const [selectedWeek, setSelectedWeek] = useState<number>(() => currentSchoolWeek(classConfig.weeks)?.weekNumber ?? 1);
   const [deductStudentId, setDeductStudentId] = useState<string | null>(null);
   const [editPointsStudentId, setEditPointsStudentId] = useState<string | null>(null);
+  const [explainStudentId, setExplainStudentId] = useState<string | null>(null);
   const [rankFilter, setRankFilter] = useState<string>('all');
+  const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'unexcused' | 'excused' | 'any'>('all');
   const [isZaloModalOpen, setIsZaloModalOpen] = useState<boolean>(false);
 
   // Modals for achievement awards
@@ -89,11 +108,19 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
   const [customNoteInput, setCustomNoteInput] = useState<string>('');
   const [awardingResult, setAwardingResult] = useState<string | null>(null);
 
-  // Management modal for editing and deleting bonus points
+  // Management modal for editing, moving and deleting bonus points
   const [isManageBonusesModalOpen, setIsManageBonusesModalOpen] = useState(false);
   const [manageBonusSearch, setManageBonusSearch] = useState('');
   const [manageBonusFilterType, setManageBonusFilterType] = useState<'all' | 'achievement' | 'regular'>('all');
   const [manageStudentFilter, setManageStudentFilter] = useState<string>('all');
+  const [selectedBonusLogIds, setSelectedBonusLogIds] = useState<Set<string>>(new Set());
+  const [movingBonusLogs, setMovingBonusLogs] = useState<DisciplineLog[] | null>(null);
+  const [targetMoveWeek, setTargetMoveWeek] = useState<number>(() => {
+    const nextWeek = selectedWeek + 1;
+    return classConfig.weeks.some((w) => w.weekNumber === nextWeek) ? nextWeek : 1;
+  });
+  const [customMoveNote, setCustomMoveNote] = useState<string>('');
+  const [isMovingBonus, setIsMovingBonus] = useState<boolean>(false);
   const [editingBonusLog, setEditingBonusLog] = useState<{
     id: string;
     studentName: string;
@@ -102,6 +129,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
     title: string;
     note: string;
     isAchievement: boolean;
+    targetWeekNumber: number;
   } | null>(null);
   const [deletingBonusLog, setDeletingBonusLog] = useState<{
     id: string;
@@ -144,7 +172,32 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
   // Calculate summaries strictly derived from source logs
   const weeklyData = useMemo(() => {
     return getWeeklySummary(selectedWeek, selectedMonth);
-  }, [getWeeklySummary, selectedWeek, selectedMonth]);
+  }, [getWeeklySummary, selectedWeek, selectedMonth, disciplineLogs]);
+
+  // Attendance stats for quick filter buttons
+  const attendanceStats = useMemo(() => {
+    let unexcusedCount = 0;
+    let excusedCount = 0;
+    let anyAbsenceCount = 0;
+    let truancyCount = 0;
+
+    weeklyData.forEach((s) => {
+      const u = s.unexcusedAbsenceCount || 0;
+      const e = s.excusedAbsenceCount || 0;
+      const t = s.truancyCount || 0;
+      if (u > 0) unexcusedCount++;
+      if (e > 0) excusedCount++;
+      if (u > 0 || e > 0 || t > 0) anyAbsenceCount++;
+      if (t > 0) truancyCount++;
+    });
+
+    return {
+      unexcusedCount,
+      excusedCount,
+      anyAbsenceCount,
+      truancyCount,
+    };
+  }, [weeklyData]);
 
   // Sorting state for weekly table
   const [sortField, setSortField] = useState<'score' | 'name' | 'code'>('score');
@@ -159,11 +212,26 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
     }
   };
 
-  // Filtered and sorted by rank, name, code, or score
+  // Filtered and sorted by rank, attendance, name, code, or score
   const filteredData = useMemo(() => {
     let list = weeklyData;
+
+    // Filter by rank
     if (rankFilter !== 'all') {
-      list = weeklyData.filter((d) => d.rank === rankFilter);
+      list = list.filter((d) => {
+        if (rankFilter === 'Đạt' || rankFilter === 'Trung bình') return d.rank === 'Đạt' || d.rank === 'Trung bình';
+        if (rankFilter === 'Không đạt' || rankFilter === 'Yếu') return d.rank === 'Không đạt' || d.rank === 'Yếu';
+        return d.rank === rankFilter;
+      });
+    }
+
+    // Filter by attendance
+    if (attendanceFilter === 'unexcused') {
+      list = list.filter((d) => (d.unexcusedAbsenceCount || 0) > 0);
+    } else if (attendanceFilter === 'excused') {
+      list = list.filter((d) => (d.excusedAbsenceCount || 0) > 0);
+    } else if (attendanceFilter === 'any') {
+      list = list.filter((d) => (d.unexcusedAbsenceCount || 0) > 0 || (d.excusedAbsenceCount || 0) > 0 || (d.truancyCount || 0) > 0);
     }
 
     return [...list].sort((a, b) => {
@@ -178,7 +246,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
       if (diff !== 0) return sortDirection === 'desc' ? diff : -diff;
       return compareVietnameseNames(a, b, 'asc');
     });
-  }, [weeklyData, rankFilter, sortField, sortDirection]);
+  }, [weeklyData, rankFilter, attendanceFilter, sortField, sortDirection]);
 
   // Eligible students for Zero-violation Clean Week (Rule TT_W01 or first auto weekly rule)
   const zeroViolationRule = useMemo(() => {
@@ -222,8 +290,10 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
       'Xuất sắc': weeklyData.filter((d) => d.rank === 'Xuất sắc').length,
       'Tốt': weeklyData.filter((d) => d.rank === 'Tốt').length,
       'Khá': weeklyData.filter((d) => d.rank === 'Khá').length,
-      'Trung bình': weeklyData.filter((d) => d.rank === 'Trung bình').length,
-      'Yếu': weeklyData.filter((d) => d.rank === 'Yếu').length,
+      'Đạt': weeklyData.filter((d) => d.rank === 'Đạt' || d.rank === 'Trung bình').length,
+      'Không đạt': weeklyData.filter((d) => d.rank === 'Không đạt' || d.rank === 'Yếu').length,
+      'Trung bình': weeklyData.filter((d) => d.rank === 'Đạt' || d.rank === 'Trung bình').length,
+      'Yếu': weeklyData.filter((d) => d.rank === 'Không đạt' || d.rank === 'Yếu').length,
     };
 
     return {
@@ -297,7 +367,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
   // All bonus logs for the selected week
   const weeklyBonusLogs = useMemo(() => {
     return disciplineLogs.filter(
-      (l) => l.weekNumber === selectedWeek && l.type === 'bonus'
+      (l) => l.weekNumber === selectedWeek && l.type === 'bonus' && !isMonthlyBonus(l)
     );
   }, [disciplineLogs, selectedWeek]);
 
@@ -341,6 +411,8 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
     setManageStudentFilter(studentId || 'all');
     setManageBonusFilterType('all');
     setManageBonusSearch('');
+    setSelectedBonusLogIds(new Set());
+    setMovingBonusLogs(null);
     setEditingBonusLog(null);
     setDeletingBonusLog(null);
     setIsManageBonusesModalOpen(true);
@@ -363,6 +435,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
       title: cleanTitle,
       note: log.note || '',
       isAchievement: isAch,
+      targetWeekNumber: log.weekNumber,
     });
   };
 
@@ -378,20 +451,95 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
       ? (rawTitle.startsWith('[Thành tích tuần]') ? rawTitle : `[Thành tích tuần] ${rawTitle}`)
       : rawTitle;
 
-    await updateDisciplineLog(
-      editingBonusLog.id,
-      {
-        scorePerUnit: newScore,
-        totalScore: newScore,
-        behaviorDescription: finalDescription,
-        note: editingBonusLog.note.trim() || undefined,
-      },
-      classConfig.homeroomTeacher || 'GVCN'
-    );
+    const weekChanged = editingBonusLog.targetWeekNumber !== originalLog.weekNumber;
+
+    if (weekChanged) {
+      await updateDisciplineLog(
+        editingBonusLog.id,
+        {
+          scorePerUnit: newScore,
+          totalScore: newScore,
+          behaviorDescription: finalDescription,
+          note: editingBonusLog.note.trim() || undefined,
+          weekNumber: editingBonusLog.targetWeekNumber,
+        },
+        classConfig.homeroomTeacher || 'GVCN'
+      );
+      setAwardingResult(
+        `Đã lưu và chuyển điểm thưởng (+${newScore}đ) của học sinh ${editingBonusLog.studentName} sang Tuần ${editingBonusLog.targetWeekNumber}!`
+      );
+    } else {
+      await updateDisciplineLog(
+        editingBonusLog.id,
+        {
+          scorePerUnit: newScore,
+          totalScore: newScore,
+          behaviorDescription: finalDescription,
+          note: editingBonusLog.note.trim() || undefined,
+        },
+        classConfig.homeroomTeacher || 'GVCN'
+      );
+      setAwardingResult(`Đã cập nhật điểm thưởng của học sinh ${editingBonusLog.studentName} (+${newScore}đ)!`);
+    }
 
     setEditingBonusLog(null);
-    setAwardingResult(`Đã cập nhật điểm thưởng của học sinh ${editingBonusLog.studentName} (+${newScore}đ)!`);
     setTimeout(() => setAwardingResult(null), 4000);
+  };
+
+  // Start moving bonus log(s) to another week
+  const handleStartMoveBonus = (logs: DisciplineLog[]) => {
+    if (!logs || logs.length === 0) return;
+    const nextW = selectedWeek + 1;
+    const defaultTarget = classConfig.weeks.some((w) => w.weekNumber === nextW && !isPeriodLocked('week', w.weekNumber))
+      ? nextW
+      : classConfig.weeks.find((w) => w.weekNumber !== selectedWeek && !isPeriodLocked('week', w.weekNumber))?.weekNumber || selectedWeek;
+
+    setTargetMoveWeek(defaultTarget);
+    setCustomMoveNote('');
+    setMovingBonusLogs(logs);
+  };
+
+  // Confirm moving bonus log(s)
+  const handleConfirmMoveBonus = async () => {
+    if (!movingBonusLogs || movingBonusLogs.length === 0) return;
+    if (targetMoveWeek === selectedWeek) {
+      alert('Vui lòng chọn tuần khác với tuần hiện tại!');
+      return;
+    }
+    if (isPeriodLocked('week', targetMoveWeek)) {
+      alert(`Tuần ${targetMoveWeek} đã khóa thi đua. Không thể chuyển vào tuần này.`);
+      return;
+    }
+
+    setIsMovingBonus(true);
+    try {
+      const ids = movingBonusLogs.map((l) => l.id);
+      const res = await batchMoveDisciplineLogsToWeek(
+        ids,
+        targetMoveWeek,
+        activeAccount?.displayName || classConfig.homeroomTeacher || 'GVCN',
+        customMoveNote.trim() || undefined
+      );
+
+      const totalScore = movingBonusLogs.reduce((sum, l) => sum + l.totalScore, 0);
+      setMovingBonusLogs(null);
+      setSelectedBonusLogIds(new Set());
+
+      if (res.errors.length > 0) {
+        setAwardingResult(
+          `Đã chuyển ${res.movedCount}/${ids.length} điểm thưởng sang Tuần ${targetMoveWeek}. Lỗi: ${res.errors[0]}`
+        );
+      } else {
+        setAwardingResult(
+          `Đã di chuyển thành công ${res.movedCount} điểm thưởng (+${formatVietnameseNumber(totalScore)}đ) từ Tuần ${selectedWeek} sang Tuần ${targetMoveWeek}!`
+        );
+      }
+      setTimeout(() => setAwardingResult(null), 5000);
+    } catch (err: any) {
+      alert('Lỗi di chuyển điểm thưởng: ' + (err.message || String(err)));
+    } finally {
+      setIsMovingBonus(false);
+    }
   };
 
   // Confirm delete bonus log
@@ -433,6 +581,8 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
 
   return (
     <div className="space-y-5">
+      <PeriodReview weekNumber={selectedWeek} />
+      {explainStudentId && <ScoreExplanation studentId={explainStudentId} weekNumber={selectedWeek} onClose={() => setExplainStudentId(null)} />}
       {/* Header and Filter Row */}
       <div className="bg-white dark:bg-slate-800 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
         <div>
@@ -497,8 +647,46 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
           </button>
 
           <button
+            onClick={() => handleOpenManageBonuses('all')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-xs transition active:scale-95 cursor-pointer"
+            title="Quản lý và chuyển điểm thưởng tuần này sang tuần khác"
+          >
+            <ArrowRightLeft className="h-3.5 w-3.5" />
+            <span>Chuyển điểm thưởng ({weeklyBonusLogs.length})</span>
+          </button>
+
+          <button
+            onClick={() => {
+              if (onNavigateToZalo) {
+                onNavigateToZalo({
+                  week: selectedWeek,
+                  month: selectedMonth,
+                  mode: 'week',
+                  templateId: 'weekly_class_group',
+                });
+              } else {
+                onNavigateTab('zalo-composer');
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold rounded-xl shadow-xs transition active:scale-95 cursor-pointer"
+            title="Soạn thảo tin nhắn Zalo kèm số liệu điểm nề nếp tuần này"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            <span>Soạn tin Zalo</span>
+          </button>
+
+          <button
+            onClick={() => onNavigateTab('attendance-report')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 text-xs font-bold rounded-xl border border-rose-200 dark:border-rose-850 shadow-xs transition active:scale-95 cursor-pointer"
+            title="Mở Báo cáo danh sách học sinh nghỉ học chi tiết số buổi và lý do"
+          >
+            <UserX className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+            <span>Báo cáo nghỉ học</span>
+          </button>
+
+          <button
             onClick={() => setIsZaloModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-xs transition active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-xs transition active:scale-95 cursor-pointer"
             title="Sao chép hình ảnh Tổng kết Tuần để dán gửi nhóm Zalo phụ huynh"
           >
             <Share2 className="h-3.5 w-3.5" />
@@ -574,12 +762,14 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {isPeriodLocked('week', selectedWeek) ? (
+            {isPeriodLocked('week', selectedWeek) && (
               <span className="text-xs font-bold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
                 <AlertTriangle className="h-4 w-4" />
-                <span>Tuần {selectedWeek} đã khóa thi đua. Tính năng cộng/sửa thưởng đã bị khóa.</span>
+                <span>Tuần {selectedWeek} đã khóa thi đua.</span>
               </span>
-            ) : (
+            )}
+
+            {!isPeriodLocked('week', selectedWeek) && (
               <>
                 {eligibleZeroViolationStudents.length > 0 && zeroViolationRule && (
                   <button
@@ -612,21 +802,21 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                     + Cộng điểm tuần {tableSelectedStudentIds.size > 0 ? `(${tableSelectedStudentIds.size} HS đã chọn)` : '(Nhiều HS)'}
                   </span>
                 </button>
-
-                <button
-                  onClick={() => handleOpenManageBonuses('all')}
-                  className={`flex items-center gap-1.5 px-3.5 py-2 border text-xs font-bold rounded-xl shadow-xs transition active:scale-95 cursor-pointer ${
-                    weeklyBonusLogs.length > 0
-                      ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700'
-                      : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
-                  }`}
-                  title="Xem danh sách, sửa mức điểm hoặc xóa điểm thưởng đã trao trong tuần"
-                >
-                  <Edit3 className="h-4 w-4 text-amber-600" />
-                  <span>Sửa / Xóa điểm thưởng ({weeklyBonusLogs.length})</span>
-                </button>
               </>
             )}
+
+            <button
+              onClick={() => handleOpenManageBonuses('all')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 border text-xs font-bold rounded-xl shadow-xs transition active:scale-95 cursor-pointer ${
+                weeklyBonusLogs.length > 0
+                  ? 'bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/70 dark:hover:bg-amber-900/80 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700'
+                  : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+              }`}
+              title="Xem danh sách, sửa mức điểm, di chuyển sang tuần khác hoặc xóa điểm thưởng đã trao"
+            >
+              <ArrowRightLeft className="h-4 w-4 text-amber-600" />
+              <span>Quản lý & Chuyển điểm thưởng ({weeklyBonusLogs.length})</span>
+            </button>
           </div>
         </div>
       </div>
@@ -679,37 +869,149 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
         </div>
       </div>
 
-      {/* Filter by Rank and Sort Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs print:hidden">
-        <div className="flex items-center gap-1.5 overflow-x-auto font-semibold">
-          <span className="text-slate-500 font-normal">Lọc theo xếp loại:</span>
-          <button
-            onClick={() => setRankFilter('all')}
-            className={`px-3 py-1 rounded-lg transition ${
-              rankFilter === 'all'
-                ? 'bg-blue-600 text-white'
-                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-            }`}
-          >
-            Tất cả ({weeklyData.length})
-          </button>
-          {(['Xuất sắc', 'Tốt', 'Khá', 'Trung bình', 'Yếu'] as const).map((r) => (
+      {/* KHỐI BỘ LỌC CHUYÊN CẦN & XẾP LOẠI THI ĐUA */}
+      <div className="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-2.5 print:hidden">
+        {/* Dòng 1: Bộ lọc Chuyên Cần & Vắng Nghỉ */}
+        <div className="flex items-center justify-between flex-wrap gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-700/60">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-750 text-slate-700 dark:text-slate-300 font-bold text-xs shrink-0">
+              <Users className="h-3.5 w-3.5 text-blue-600" />
+              <span>Chuyên cần & Nghỉ học:</span>
+            </span>
+
             <button
-              key={r}
-              onClick={() => setRankFilter(r)}
-              className={`px-3 py-1 rounded-lg transition ${
-                rankFilter === r
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+              onClick={() => {
+                setAttendanceFilter('all');
+              }}
+              className={`px-3 py-1 rounded-lg transition font-semibold cursor-pointer text-xs ${
+                attendanceFilter === 'all'
+                  ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
               }`}
             >
-              {r} ({stats.ranks[r]})
+              Tất cả chuyên cần
             </button>
-          ))}
+
+            {/* Lọc: Nghỉ có phép */}
+            <button
+              onClick={() => {
+                setRankFilter('all');
+                setAttendanceFilter((prev) => (prev === 'excused' ? 'all' : 'excused'));
+              }}
+              className={`px-3 py-1 rounded-lg transition font-semibold flex items-center gap-1.5 border cursor-pointer text-xs ${
+                attendanceFilter === 'excused'
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-sm ring-2 ring-amber-400'
+                  : attendanceStats.excusedCount > 0
+                  ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800 font-bold'
+                  : 'bg-slate-50 dark:bg-slate-750 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+              }`}
+              title="Lọc danh sách học sinh có nghỉ học có phép trong tuần"
+            >
+              <span>📋 Nghỉ có phép</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
+                attendanceFilter === 'excused' ? 'bg-white/20 text-white' : 'bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100'
+              }`}>
+                {attendanceStats.excusedCount}
+              </span>
+            </button>
+
+            {/* Lọc: Nghỉ không phép */}
+            <button
+              onClick={() => {
+                setRankFilter('all');
+                setAttendanceFilter((prev) => (prev === 'unexcused' ? 'all' : 'unexcused'));
+              }}
+              className={`px-3 py-1 rounded-lg transition font-semibold flex items-center gap-1.5 border cursor-pointer text-xs ${
+                attendanceFilter === 'unexcused'
+                  ? 'bg-rose-600 text-white border-rose-600 shadow-sm ring-2 ring-rose-400'
+                  : attendanceStats.unexcusedCount > 0
+                  ? 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-800 font-bold'
+                  : 'bg-slate-50 dark:bg-slate-750 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+              }`}
+              title="Lọc danh sách học sinh nghỉ học không phép trong tuần"
+            >
+              <span>⚠️ Nghỉ không phép</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
+                attendanceFilter === 'unexcused' ? 'bg-white/20 text-white' : 'bg-rose-200 dark:bg-rose-900 text-rose-900 dark:text-rose-100'
+              }`}>
+                {attendanceStats.unexcusedCount}
+              </span>
+            </button>
+
+            {/* Tất cả học sinh có vắng nghỉ (dù có phép hay không phép) */}
+            <button
+              onClick={() => {
+                setRankFilter('all');
+                setAttendanceFilter((prev) => (prev === 'any' ? 'all' : 'any'));
+              }}
+              className={`px-3.5 py-1 rounded-lg transition font-medium flex items-center gap-1.5 border cursor-pointer text-xs ${
+                attendanceFilter === 'any'
+                  ? 'bg-rose-700 text-white border-rose-700 shadow-sm ring-2 ring-rose-400'
+                  : attendanceStats.anyAbsenceCount > 0
+                  ? 'bg-rose-100 text-rose-900 border-rose-300 hover:bg-rose-200 dark:bg-rose-950 dark:text-rose-100 dark:border-rose-700'
+                  : 'bg-slate-50 dark:bg-slate-750 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+              }`}
+              title="Danh sách tất cả học sinh có vắng nghỉ (có phép hoặc không phép)"
+            >
+              <span>👥 Tất cả HS nghỉ</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-extrabold ${
+                attendanceFilter === 'any' ? 'bg-white/20 text-white' : 'bg-rose-600 text-white'
+              }`}>
+                {attendanceStats.anyAbsenceCount}
+              </span>
+            </button>
+          </div>
+
+          {(rankFilter !== 'all' || attendanceFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setRankFilter('all');
+                setAttendanceFilter('all');
+              }}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold flex items-center gap-1 cursor-pointer bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 rounded-lg"
+              title="Xóa toàn bộ bộ lọc và hiển thị tất cả học sinh"
+            >
+              <span>✕ Xóa tất cả bộ lọc</span>
+            </button>
+          )}
         </div>
 
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-slate-500 dark:text-slate-400 font-medium">Xếp theo:</span>
+        {/* Dòng 2: Bộ lọc Xếp loại thi đua & Sắp xếp danh sách */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs pt-0.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-slate-500 font-medium shrink-0">Xếp loại thi đua:</span>
+            <button
+              onClick={() => {
+                setRankFilter('all');
+              }}
+              className={`px-3 py-1 rounded-lg transition font-semibold cursor-pointer ${
+                rankFilter === 'all'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-650'
+              }`}
+            >
+              Tất cả ({weeklyData.length})
+            </button>
+            {(['Xuất sắc', 'Tốt', 'Khá', 'Đạt', 'Không đạt'] as const).map((r) => (
+              <button
+                key={r}
+                onClick={() => {
+                  setAttendanceFilter('all');
+                  setRankFilter((prev) => (prev === r ? 'all' : r));
+                }}
+                className={`px-2.5 py-1 rounded-lg transition font-semibold cursor-pointer ${
+                  rankFilter === r
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-650'
+                }`}
+              >
+                {r} ({stats.ranks[r]})
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-slate-500 dark:text-slate-400 font-medium shrink-0">Xếp theo:</span>
           
           <button
             onClick={() => handleSortChange('score')}
@@ -759,6 +1061,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
           </button>
         </div>
       </div>
+    </div>
 
       {/* Main Weekly Table */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden relative">
@@ -835,7 +1138,35 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-              {filteredData.map((s, idx) => {
+              {filteredData.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="py-12 text-center text-slate-500">
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      Không có học sinh nào phù hợp với bộ lọc hiện tại.
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {attendanceFilter === 'unexcused'
+                        ? 'Tuần này không có học sinh nào nghỉ học không phép.'
+                        : attendanceFilter === 'excused'
+                        ? 'Tuần này không có học sinh nào nghỉ học có phép.'
+                        : attendanceFilter === 'any'
+                        ? 'Tuần này không có học sinh nào nghỉ học (100% học sinh đi học đầy đủ).'
+                        : 'Không tìm thấy kết quả phù hợp.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRankFilter('all');
+                        setAttendanceFilter('all');
+                      }}
+                      className="mt-3 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300 rounded-lg transition cursor-pointer"
+                    >
+                      Xem toàn bộ {weeklyData.length} học sinh
+                    </button>
+                  </td>
+                </tr>
+              ) : (
+                filteredData.map((s, idx) => {
                 const rankBadge = getRankBadgeClass(s.rank);
                 const hasAchievement = (s.achievementCount || 0) > 0;
                 const isSelected = tableSelectedStudentIds.has(s.studentId);
@@ -875,7 +1206,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                       {s.studentCode}
                     </td>
                     <td className="py-2.5 px-3">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-bold text-slate-900 dark:text-white">
                           {s.fullName}
                         </span>
@@ -887,6 +1218,31 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                             <Award className="h-3.5 w-3.5" />
                           </span>
                         )}
+                        {/* Huy hiệu Chuyên cần / Nghỉ học */}
+                        {s.unexcusedAbsenceCount > 0 && (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-200 dark:border-rose-800"
+                            title={`Nghỉ học không phép: ${s.unexcusedAbsenceCount} buổi`}
+                          >
+                            KP: {s.unexcusedAbsenceCount}
+                          </span>
+                        )}
+                        {s.excusedAbsenceCount > 0 && (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                            title={`Nghỉ học có phép: ${s.excusedAbsenceCount} buổi`}
+                          >
+                            P: {s.excusedAbsenceCount}
+                          </span>
+                        )}
+                        {s.truancyCount > 0 && (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300 border border-purple-200 dark:border-purple-800"
+                            title={`Bỏ / trốn tiết: ${s.truancyCount} lần`}
+                          >
+                            BT: {s.truancyCount}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="py-2.5 px-3 text-slate-500 font-mono">
@@ -894,9 +1250,9 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                     </td>
                     <td className="py-2.5 px-3 text-center font-mono">
                       {s.violationCount > 0 ? (
-                        <span className="px-2 py-0.5 bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 rounded-full font-bold">
+                        <button type="button" onClick={() => setEditPointsStudentId(s.studentId)} title="Xem, sửa hoặc xóa lỗi" className="px-2 py-0.5 bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 rounded-full font-bold">
                           {s.violationCount}
-                        </span>
+                        </button>
                       ) : (
                         <span className="text-slate-300">0</span>
                       )}
@@ -910,27 +1266,27 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                           type="button"
                           onClick={() => handleOpenManageBonuses(s.studentId)}
                           className="inline-flex items-center gap-1 text-amber-600 hover:text-amber-700 dark:text-amber-400 hover:underline group cursor-pointer"
-                          title="Bấm để xem, sửa hoặc xóa điểm thưởng tuần của học sinh này"
+                          title="Bấm để chuyển tuần, sửa hoặc xóa điểm thưởng tuần của học sinh này"
                         >
                           <span>+{formatVietnameseNumber(s.achievementBonus || 0)}đ</span>
-                          <Edit3 className="h-3 w-3 opacity-60 group-hover:opacity-100 transition-opacity print:hidden" />
+                          <ArrowRightLeft className="h-3 w-3 opacity-70 group-hover:opacity-100 transition-opacity print:hidden" />
                         </button>
                       ) : s.totalBonus > 0 ? (
                         <button
                           type="button"
                           onClick={() => handleOpenManageBonuses(s.studentId)}
                           className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 hover:underline group cursor-pointer"
-                          title="Bấm để xem, sửa hoặc xóa điểm cộng tuần của học sinh này"
+                          title="Bấm để chuyển tuần, sửa hoặc xóa điểm cộng tuần của học sinh này"
                         >
                           <span>+{formatVietnameseNumber(s.totalBonus)}đ</span>
-                          <Edit3 className="h-3 w-3 opacity-60 group-hover:opacity-100 transition-opacity print:hidden" />
+                          <ArrowRightLeft className="h-3 w-3 opacity-70 group-hover:opacity-100 transition-opacity print:hidden" />
                         </button>
                       ) : (
                         <span className="text-slate-300">0</span>
                       )}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono font-bold text-sm text-slate-900 dark:text-white">
-                      {formatVietnameseNumber(s.finalScore)}
+                      <button type="button" title="Xem cách tính điểm" className="underline decoration-dotted" onClick={() => setExplainStudentId(s.studentId)}>{formatVietnameseNumber(s.finalScore)}</button>
                     </td>
                     <td className="py-2.5 px-3 text-center whitespace-nowrap">
                       <span
@@ -945,6 +1301,17 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                     <td className="py-2.5 px-3 text-center print:hidden">
                       <div className="flex items-center justify-center gap-1">
                         {activeAccount?.role !== 'monitor' && <button type="button" onClick={() => setEditPointsStudentId(s.studentId)} title={`Sửa điểm đã ghi nhận của ${s.fullName}`} aria-label={`Sửa điểm của ${s.fullName}`} className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 rounded"><Edit3 className="h-4 w-4" /></button>}
+                        {s.totalBonus > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenManageBonuses(s.studentId)}
+                            className="p-1 text-amber-600 hover:bg-amber-50 dark:hover:bg-slate-700 rounded transition cursor-pointer"
+                            title={`⇄ Chuyển điểm thưởng sang tuần khác hoặc sửa điểm của ${s.fullName}`}
+                            aria-label={`Chuyển điểm thưởng của ${s.fullName}`}
+                          >
+                            <ArrowRightLeft className="h-4 w-4" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           disabled={isPeriodLocked('week', selectedWeek) || (activeAccount?.role === 'monitor' && !activeAccount.permissions?.canAddViolations)}
@@ -985,7 +1352,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>
@@ -1092,7 +1459,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                 Hủy
               </button>
               <button
-                onClick={handleConfirmAutoAward}
+                onClick={() => handleConfirmAutoAward().catch(e => alert(e.message || String(e)))}
                 className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-sm transition active:scale-95"
               >
                 Xác nhận trao thưởng ({eligibleZeroViolationStudents.length} HS)
@@ -1304,7 +1671,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                         type="number"
                         step="0.5"
                         min="0.1"
-                        max="10"
+                        max="100"
                         value={customScoreInput}
                         onChange={(e) => setCustomScoreInput(Number(e.target.value))}
                         className="w-28 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-black font-mono text-emerald-600 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -1335,7 +1702,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                     <input
                       type="text"
                       disabled
-                      value={`Tuần ${selectedWeek} (Tháng ${selectedMonth}) • Năm học ${classConfig.schoolYear || '2025–2026'}`}
+                      value={`Tuần ${selectedWeek} (Tháng ${selectedMonth}) • Năm học ${classConfig.schoolYear || currentSchoolYear()}`}
                       className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 font-medium"
                     />
                   </div>
@@ -1379,7 +1746,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                 <button
                   type="button"
                   disabled={selectedStudentIds.length === 0}
-                  onClick={handleConfirmCustomAward}
+                  onClick={() => handleConfirmCustomAward().catch(e => alert(e.message || String(e)))}
                   className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md transition active:scale-95 cursor-pointer flex items-center gap-1.5"
                 >
                   <Award className="h-4 w-4" />
@@ -1402,19 +1769,21 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <Award className="h-5 w-5 text-amber-600" />
-                  <span>Quản Lý & Sửa / Xóa Điểm Thưởng Tuần {selectedWeek}</span>
+                  <span>Quản Lý, Chuyển & Sửa / Xóa Điểm Thưởng Tuần {selectedWeek}</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Điều chỉnh số điểm, nội dung khen thưởng hoặc xóa/thu hồi điểm thưởng đã ghi nhận
+                  Di chuyển điểm thưởng sang tuần khác, điều chỉnh số điểm hoặc xóa / thu hồi điểm thưởng đã ghi nhận
                 </p>
               </div>
               <button
                 onClick={() => {
                   setIsManageBonusesModalOpen(false);
                   setEditingBonusLog(null);
+                  setMovingBonusLogs(null);
                   setDeletingBonusLog(null);
+                  setSelectedBonusLogIds(new Set());
                 }}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -1434,7 +1803,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                  <div className="sm:col-span-2">
+                  <div>
                     <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
                       Tên danh hiệu / Nội dung khen thưởng *
                     </label>
@@ -1456,8 +1825,8 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                     <input
                       type="number"
                       step="0.5"
-                      min="0.5"
-                      max="10"
+                      min="0.1"
+                      max="100"
                       value={editingBonusLog.score}
                       onChange={(e) =>
                         setEditingBonusLog({
@@ -1467,6 +1836,34 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                       }
                       className="w-full px-3 py-1.5 bg-white dark:bg-slate-750 border border-slate-300 dark:border-slate-600 rounded-lg text-emerald-600 font-bold font-mono"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
+                      Tuần áp dụng (Chuyển tuần)
+                    </label>
+                    <select
+                      value={editingBonusLog.targetWeekNumber}
+                      onChange={(e) =>
+                        setEditingBonusLog({
+                          ...editingBonusLog,
+                          targetWeekNumber: Number(e.target.value),
+                        })
+                      }
+                      className="w-full px-3 py-1.5 bg-white dark:bg-slate-750 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-800 dark:text-slate-100 font-medium"
+                    >
+                      {classConfig.weeks.map((w) => (
+                        <option
+                          key={w.weekNumber}
+                          value={w.weekNumber}
+                          disabled={isPeriodLocked('week', w.weekNumber) && w.weekNumber !== editingBonusLog.targetWeekNumber}
+                        >
+                          Tuần {w.weekNumber} (Tháng {w.month})
+                          {w.weekNumber === selectedWeek ? ' - Hiện tại' : ''}
+                          {isPeriodLocked('week', w.weekNumber) ? ' - [Đã khóa]' : ''}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="sm:col-span-3">
@@ -1489,16 +1886,114 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setEditingBonusLog(null)}
-                    className="px-3 py-1.5 bg-white dark:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-50"
+                    className="px-3 py-1.5 bg-white dark:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
                   >
                     Hủy chỉnh sửa
                   </button>
                   <button
                     type="button"
                     onClick={handleSaveEditBonus}
-                    className="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold shadow-sm transition active:scale-95"
+                    className="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold shadow-sm transition active:scale-95 cursor-pointer"
                   >
                     Lưu thay đổi
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-Panel: Xác Nhận Di Chuyển Điểm Thưởng Tuần */}
+            {movingBonusLogs && (
+              <div className="my-3 p-4 bg-blue-50/90 dark:bg-blue-950/40 border border-blue-300 dark:border-blue-700 rounded-xl space-y-3 shrink-0 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between pb-2 border-b border-blue-200 dark:border-blue-800">
+                  <span className="font-bold text-xs text-blue-950 dark:text-blue-200 flex items-center gap-1.5">
+                    <ArrowRightLeft className="h-4 w-4 text-blue-600" />
+                    Di chuyển {movingBonusLogs.length} điểm thưởng từ Tuần {selectedWeek} sang tuần khác
+                  </span>
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-blue-200/80 text-blue-900 dark:bg-blue-900/60 dark:text-blue-200 font-bold">
+                    Tổng +{formatVietnameseNumber(movingBonusLogs.reduce((acc, l) => acc + l.totalScore, 0))}đ
+                  </span>
+                </div>
+
+                <div className="max-h-28 overflow-y-auto space-y-1 text-xs pr-1 scrollbar-thin">
+                  {movingBonusLogs.map((l) => (
+                    <div
+                      key={l.id}
+                      className="flex items-center justify-between bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-lg border border-blue-100 dark:border-blue-900 text-[11px]"
+                    >
+                      <div className="truncate pr-2">
+                        <strong>{l.studentName}</strong> ({l.studentCode}) •{' '}
+                        <span className="text-slate-600 dark:text-slate-300">
+                          {l.behaviorDescription.replace(/\[Thành tích (tuần|tháng)\]\s*/g, '')}
+                        </span>
+                      </div>
+                      <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
+                        +{formatVietnameseNumber(l.totalScore)}đ
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
+                  <div>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
+                      Chọn tuần đích muốn chuyển đến *
+                    </label>
+                    <select
+                      value={targetMoveWeek}
+                      onChange={(e) => setTargetMoveWeek(Number(e.target.value))}
+                      disabled={isMovingBonus}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-750 border border-blue-300 dark:border-blue-700 rounded-xl text-slate-800 dark:text-slate-100 font-semibold text-xs"
+                    >
+                      {classConfig.weeks.map((w) => {
+                        const isCur = w.weekNumber === selectedWeek;
+                        const isLock = isPeriodLocked('week', w.weekNumber);
+                        return (
+                          <option key={w.weekNumber} value={w.weekNumber} disabled={isCur || isLock}>
+                            Tuần {w.weekNumber} (Tháng {w.month}: {formatVietnameseDate(w.startDate)} - {formatVietnameseDate(w.endDate)})
+                            {isCur ? ' • (Tuần hiện tại)' : ''}
+                            {isLock ? ' • [Đã khóa]' : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold mb-1 text-slate-700 dark:text-slate-300">
+                      Lý do / Ghi chú di chuyển (tùy chọn)
+                    </label>
+                    <input
+                      type="text"
+                      value={customMoveNote}
+                      onChange={(e) => setCustomMoveNote(e.target.value)}
+                      disabled={isMovingBonus}
+                      placeholder="VD: Chuyển thưởng theo đề xuất GVCN / bù điểm..."
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-750 border border-blue-300 dark:border-blue-700 rounded-xl text-slate-800 dark:text-slate-100 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-blue-700 dark:text-blue-300 bg-blue-100/60 dark:bg-blue-900/30 p-2 rounded-lg">
+                  💡 Điểm thưởng sẽ được chuyển khỏi bảng điểm Tuần {selectedWeek} và cộng ngay vào Tuần {targetMoveWeek}. Bảng tổng kết và xếp loại của học sinh sẽ tự động cập nhật ngay lập tức.
+                </p>
+
+                <div className="flex justify-end gap-2 pt-1 border-t border-blue-200 dark:border-blue-800">
+                  <button
+                    type="button"
+                    disabled={isMovingBonus}
+                    onClick={() => setMovingBonusLogs(null)}
+                    className="px-3 py-1.5 bg-white dark:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                  >
+                    Hủy bỏ
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isMovingBonus || targetMoveWeek === selectedWeek || isPeriodLocked('week', targetMoveWeek)}
+                    onClick={handleConfirmMoveBonus}
+                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-sm transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowRightLeft className="h-3.5 w-3.5" />
+                    <span>{isMovingBonus ? 'Đang chuyển…' : `Xác nhận chuyển sang Tuần ${targetMoveWeek}`}</span>
                   </button>
                 </div>
               </div>
@@ -1531,6 +2026,36 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                     className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold shadow-sm transition active:scale-95"
                   >
                     Xác nhận xóa vĩnh viễn
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Batch Action Bar */}
+            {selectedBonusLogIds.size > 0 && !movingBonusLogs && !editingBonusLog && !deletingBonusLog && (
+              <div className="my-2 p-2.5 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 rounded-xl text-xs flex items-center justify-between gap-2 shrink-0 animate-in fade-in duration-150">
+                <div className="flex items-center gap-2 text-blue-900 dark:text-blue-200 font-bold">
+                  <CheckCircle2 className="h-4 w-4 text-blue-600 shrink-0" />
+                  <span>Đã chọn {selectedBonusLogIds.size} điểm thưởng</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const logsToMove = weeklyBonusLogs.filter((l) => selectedBonusLogIds.has(l.id));
+                      handleStartMoveBonus(logsToMove);
+                    }}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold flex items-center gap-1.5 shadow-xs transition active:scale-95 cursor-pointer"
+                  >
+                    <ArrowRightLeft className="h-3.5 w-3.5" />
+                    <span>Chuyển {selectedBonusLogIds.size} mục sang tuần khác</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBonusLogIds(new Set())}
+                    className="px-2 py-1 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold cursor-pointer"
+                  >
+                    Bỏ chọn
                   </button>
                 </div>
               </div>
@@ -1605,6 +2130,39 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                   Điểm cộng nề nếp ({weeklyBonusLogs.filter((l) => !l.behaviorCode.startsWith('TT_') && !l.behaviorDescription.includes('[Thành tích')).length})
                 </button>
               </div>
+
+              {filteredBonusLogs.length > 0 && (
+                <div className="flex items-center justify-between text-xs pt-0.5 px-0.5">
+                  <label className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300 cursor-pointer select-none font-medium">
+                    <input
+                      type="checkbox"
+                      checked={filteredBonusLogs.length > 0 && filteredBonusLogs.every((l) => selectedBonusLogIds.has(l.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedBonusLogIds(new Set(filteredBonusLogs.map((l) => l.id)));
+                        } else {
+                          setSelectedBonusLogIds(new Set());
+                        }
+                      }}
+                      className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <span>Chọn tất cả ({filteredBonusLogs.length} bản ghi)</span>
+                  </label>
+                  {selectedBonusLogIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const logsToMove = weeklyBonusLogs.filter((l) => selectedBonusLogIds.has(l.id));
+                        handleStartMoveBonus(logsToMove);
+                      }}
+                      className="text-blue-600 dark:text-blue-400 font-bold hover:underline flex items-center gap-1 text-[11px] cursor-pointer"
+                    >
+                      <ArrowRightLeft className="h-3 w-3" />
+                      <span>Chuyển {selectedBonusLogIds.size} mục đã chọn sang tuần khác</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* List of Bonus Logs */}
@@ -1630,43 +2188,61 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                   return (
                     <div
                       key={log.id}
-                      className="p-3 bg-slate-50 dark:bg-slate-750/70 hover:bg-amber-50/40 dark:hover:bg-amber-950/20 border border-slate-200 dark:border-slate-700 rounded-xl transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      className={`p-3 hover:bg-amber-50/40 dark:hover:bg-amber-950/20 border rounded-xl transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        selectedBonusLogIds.has(log.id)
+                          ? 'border-blue-400 dark:border-blue-600 bg-blue-50/40 dark:bg-blue-950/30'
+                          : 'bg-slate-50 dark:bg-slate-750/70 border-slate-200 dark:border-slate-700'
+                      }`}
                     >
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-xs text-slate-900 dark:text-white">
-                            {log.studentName}
-                          </span>
-                          <span className="font-mono text-[11px] text-slate-400 font-medium">
-                            ({log.studentCode})
-                          </span>
-                          <span
-                            className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              isAch
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
-                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
-                            }`}
-                          >
-                            {isAch ? '🏆 Thành tích tuần' : '⭐ Điểm cộng nề nếp'}
-                          </span>
-                        </div>
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedBonusLogIds.has(log.id)}
+                          onChange={(e) => {
+                            const next = new Set(selectedBonusLogIds);
+                            if (e.target.checked) next.add(log.id);
+                            else next.delete(log.id);
+                            setSelectedBonusLogIds(next);
+                          }}
+                          className="mt-1 rounded text-blue-600 focus:ring-blue-500 cursor-pointer shrink-0"
+                          title="Chọn để chuyển sang tuần khác"
+                        />
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-xs text-slate-900 dark:text-white">
+                              {log.studentName}
+                            </span>
+                            <span className="font-mono text-[11px] text-slate-400 font-medium">
+                              ({log.studentCode})
+                            </span>
+                            <span
+                              className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                isAch
+                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+                                  : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                              }`}
+                            >
+                              {isAch ? '🏆 Thành tích tuần' : '⭐ Điểm cộng nề nếp'}
+                            </span>
+                          </div>
 
-                        <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                          {cleanTitle}
-                        </p>
-
-                        {log.note && (
-                          <p className="text-[11px] text-slate-500 italic">
-                            Ghi chú: {log.note}
+                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                            {cleanTitle}
                           </p>
-                        )}
 
-                        <div className="text-[10px] text-slate-400 flex items-center gap-2 flex-wrap">
-                          <span>Ngày: {formatVietnameseDate(log.date)}</span>
-                          <span>•</span>
-                          <span>{log.periodOrTime || `Tuần ${selectedWeek}`}</span>
-                          <span>•</span>
-                          <span>Người ghi: {log.reporter || 'GVCN'}</span>
+                          {log.note && (
+                            <p className="text-[11px] text-slate-500 italic">
+                              Ghi chú: {log.note}
+                            </p>
+                          )}
+
+                          <div className="text-[10px] text-slate-400 flex items-center gap-2 flex-wrap">
+                            <span>Ngày: {formatVietnameseDate(log.date)}</span>
+                            <span>•</span>
+                            <span>{log.periodOrTime || `Tuần ${selectedWeek}`}</span>
+                            <span>•</span>
+                            <span>Người ghi: {log.reporter || 'GVCN'}</span>
+                          </div>
                         </div>
                       </div>
 
@@ -1678,8 +2254,16 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                         <div className="flex items-center gap-1">
                           <button
                             type="button"
+                            onClick={() => handleStartMoveBonus([log])}
+                            className="p-1.5 text-blue-600 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900/50 rounded-lg transition cursor-pointer"
+                            title="Di chuyển điểm thưởng này sang tuần khác"
+                          >
+                            <ArrowRightLeft className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleStartEditBonus(log)}
-                            className="p-1.5 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900/50 rounded-lg transition"
+                            className="p-1.5 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900/50 rounded-lg transition cursor-pointer"
                             title="Sửa số điểm hoặc nội dung khen thưởng"
                           >
                             <Edit3 className="h-4 w-4" />
@@ -1694,7 +2278,7 @@ export const WeeklySummaryView: React.FC<WeeklySummaryViewProps> = ({
                                 title: cleanTitle,
                               })
                             }
-                            className="p-1.5 text-rose-600 hover:bg-rose-100 dark:text-rose-400 dark:hover:bg-rose-950/60 rounded-lg transition"
+                            className="p-1.5 text-rose-600 hover:bg-rose-100 dark:text-rose-400 dark:hover:bg-rose-950/60 rounded-lg transition cursor-pointer"
                             title="Xóa điểm thưởng này"
                           >
                             <Trash2 className="h-4 w-4" />

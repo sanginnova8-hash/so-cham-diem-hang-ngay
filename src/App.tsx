@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { currentSchoolYear } from './lib/classScope';
 import { AppProvider, useApp } from './context/AppContext';
 import { TabType } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
@@ -9,6 +10,7 @@ import { DailyLogView } from './components/DailyLogView';
 import { WeeklySummaryView } from './components/WeeklySummaryView';
 import { MonthlySummaryView } from './components/MonthlySummaryView';
 import { SemesterView } from './components/SemesterView';
+import { AttendanceReportView } from './components/AttendanceReportView';
 import { StudentsView } from './components/StudentsView';
 import { BehaviorCatalogView } from './components/BehaviorCatalogView';
 import { ParentReportView } from './components/ParentReportView';
@@ -23,9 +25,9 @@ import { CommandPalette } from './components/CommandPalette';
 import { MobileBottomNav } from './components/MobileBottomNav';
 
 function MainApp() {
-  const { classConfig, userRole, activeAccount } = useApp();
+  const { classConfig, userRole, activeAccount, isAuthLoading } = useApp();
   const [activeTab, setActiveTab] = useState<TabType>(() => {
-    return userRole === 'guest' ? 'portal' : 'dashboard';
+    return userRole === 'guest' || new URLSearchParams(window.location.search).has('report') ? 'portal' : 'dashboard';
   });
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -39,6 +41,13 @@ function MainApp() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [reportStudentId, setReportStudentId] = useState<string | null>(null);
   const [reportPeriodSelection, setReportPeriodSelection] = useState<import('./lib/weeklyPeriod').ReportPeriodSelection | undefined>();
+  const [zaloNavParams, setZaloNavParams] = useState<{
+    studentId?: string | null;
+    week?: number;
+    month?: number;
+    mode?: 'week' | 'month';
+    templateId?: string;
+  } | undefined>();
 
   // Persist sidebar state
   useEffect(() => {
@@ -49,7 +58,7 @@ function MainApp() {
   useEffect(() => {
     if (userRole === 'guest') {
       setActiveTab('portal');
-    } else if (activeTab === 'portal') {
+    } else if (activeTab === 'portal' && !new URLSearchParams(window.location.search).has('report')) {
       setActiveTab('dashboard');
     }
   }, [userRole]);
@@ -103,10 +112,36 @@ function MainApp() {
     setActiveTab('parent-report');
   };
 
-  const handleSelectStudentForZalo = (studentId: string) => {
-    setReportStudentId(studentId);
+  const handleNavigateToZalo = (params?: {
+    studentId?: string | null;
+    week?: number;
+    month?: number;
+    mode?: 'week' | 'month';
+    templateId?: string;
+  }) => {
+    if (params) {
+      if (params.studentId !== undefined) {
+        setReportStudentId(params.studentId);
+      }
+      setZaloNavParams(params);
+    }
     setActiveTab('zalo-composer');
   };
+
+  const handleSelectStudentForZalo = (studentId: string) => {
+    handleNavigateToZalo({ studentId });
+  };
+
+  if (isAuthLoading) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-slate-50 px-6" aria-busy="true">
+        <div role="status" className="text-center text-slate-600">
+          <p className="font-semibold text-slate-800">Trường Cao đẳng nghề số 1 - BQP</p>
+          <p className="mt-2">Đang khôi phục phiên đăng nhập…</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex font-sans selection:bg-blue-600 selection:text-white">
@@ -169,6 +204,7 @@ function MainApp() {
             <WeeklySummaryView
               onNavigateTab={setActiveTab}
               onSelectStudentForReport={handleSelectStudentForReport}
+              onNavigateToZalo={handleNavigateToZalo}
             />
           )}
 
@@ -176,6 +212,7 @@ function MainApp() {
             <MonthlySummaryView
               onNavigateTab={setActiveTab}
               onSelectStudentForReport={handleSelectStudentForReport}
+              onNavigateToZalo={handleNavigateToZalo}
             />
           )}
 
@@ -183,6 +220,14 @@ function MainApp() {
             <SemesterView
               onNavigateTab={setActiveTab}
               onSelectStudentForReport={handleSelectStudentForReport}
+            />
+          )}
+
+          {userRole !== 'guest' && activeTab === 'attendance-report' && (
+            <AttendanceReportView
+              onNavigateTab={setActiveTab}
+              onSelectStudentForReport={handleSelectStudentForReport}
+              onNavigateToZalo={handleNavigateToZalo}
             />
           )}
 
@@ -201,7 +246,11 @@ function MainApp() {
 
           {userRole !== 'guest' && activeTab === 'zalo-composer' && (
             <ZaloMessageComposerView
-              initialStudentId={reportStudentId}
+              initialStudentId={zaloNavParams?.studentId ?? reportStudentId}
+              initialWeek={zaloNavParams?.week}
+              initialMonth={zaloNavParams?.month}
+              initialPeriodMode={zaloNavParams?.mode}
+              initialTemplateId={zaloNavParams?.templateId}
               onNavigateTab={setActiveTab}
             />
           )}
@@ -259,8 +308,8 @@ function MainApp() {
             <span>
               {activeAccount && userRole !== 'guest' && activeTab !== 'portal'
                 ? userRole === 'admin' || userRole === 'owner'
-                  ? `Trường Cao Đẳng Nghề Số 1 - BQP • Bảng điều khiển quản trị • Năm học ${classConfig.schoolYear || '2025–2026'}`
-                  : `Sổ Chấm Điểm Hàng Ngày • Lớp ${classConfig.className} • Năm học ${classConfig.schoolYear || '2025–2026'} • GVCN: ${classConfig.homeroomTeacher || activeAccount.displayName}`
+                  ? `Trường Cao Đẳng Nghề Số 1 - BQP • Bảng điều khiển quản trị • Năm học ${classConfig.schoolYear || currentSchoolYear()}`
+                  : `Sổ Chấm Điểm Hàng Ngày • Lớp ${classConfig.className} • Năm học ${classConfig.schoolYear || currentSchoolYear()} • GVCN: ${classConfig.homeroomTeacher || activeAccount.displayName}`
                 : 'Trường Cao Đẳng Nghề Số 1 - Bộ Quốc Phòng • Cổng Thông Tin & Tra Cứu Nề Nếp Học Viên'}
             </span>
             <span className="text-slate-400">

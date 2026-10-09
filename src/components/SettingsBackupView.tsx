@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { PWAInstallButton } from './PWAInstallButton';
-import { formatVietnameseDate, formatVietnameseNumber } from '../lib/utils';
+import { formatVietnameseDate, formatVietnameseNumber, getRankRangeDescription } from '../lib/utils';
 import { BehaviorCategory, AchievementBonusRule } from '../types';
 import { ClassMonitorManagementCard } from './v2/ClassMonitorManagementCard';
 import { defaultWeekOneStart, schoolWeeksFrom } from '../lib/classScope';
@@ -92,7 +92,7 @@ export const SettingsBackupView: React.FC = () => {
 
   const [baseScore, setBaseScore] = useState<number>(classConfig.baseScore ?? 10);
   const [minScore, setMinScore] = useState<number>(classConfig.minScore ?? 0);
-  const [maxScore, setMaxScore] = useState<number>(classConfig.maxScore ?? 10);
+  const [maxScore, setMaxScore] = useState<number>(classConfig.maxScore && classConfig.maxScore > 10 ? classConfig.maxScore : 100);
   const [configSaved, setConfigSaved] = useState(false);
 
   // Sync inputs whenever classConfig changes (e.g. from cloud or backup restore)
@@ -117,7 +117,7 @@ export const SettingsBackupView: React.FC = () => {
 
     setBaseScore(classConfig.baseScore ?? 10);
     setMinScore(classConfig.minScore ?? 0);
-    setMaxScore(classConfig.maxScore ?? 10);
+    setMaxScore(classConfig.maxScore && classConfig.maxScore > 10 ? classConfig.maxScore : 100);
   }, [classConfig]);
 
   // Restore file input
@@ -637,7 +637,7 @@ export const SettingsBackupView: React.FC = () => {
               </div>
 
               <div className="p-3 bg-white dark:bg-slate-800 rounded-xl text-slate-500 text-xs space-y-1 border border-slate-200 dark:border-slate-700">
-                <p>• Điểm rèn luyện tuần/tháng = Giới hạn [0..10] của (Điểm nền − Điểm trừ + Điểm thưởng).</p>
+                <p>• Điểm rèn luyện = Điểm nền − Điểm trừ + Điểm thưởng (tối thiểu {classConfig.minScore}đ, không giới hạn trần; Xuất sắc {getRankRangeDescription('Xuất sắc', classConfig.rankThresholds)}, Tốt {getRankRangeDescription('Tốt', classConfig.rankThresholds)}, Khá {getRankRangeDescription('Khá', classConfig.rankThresholds)}, Đạt {getRankRangeDescription('Đạt', classConfig.rankThresholds)}, Không đạt {getRankRangeDescription('Không đạt', classConfig.rankThresholds)}).</p>
                 <p>• Năm học gồm các tháng: Tháng 9 đến Tháng 5 (35 tuần học tiêu chuẩn Bộ GD&ĐT).</p>
               </div>
             </div>

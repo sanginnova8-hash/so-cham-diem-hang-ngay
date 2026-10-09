@@ -31,7 +31,7 @@ export const PeriodLockBannerV2: React.FC<PeriodLockBannerV2Props> = ({
   const canUnlock = userRole === 'admin' || userRole === 'owner';
 
   const handleConfirmUnlock = async (unlockReason: string) => {
-    toggleLockPeriod(periodType, periodValue, unlockReason);
+    if (!await toggleLockPeriod(periodType, periodValue, unlockReason)) return;
     // Audit log
     await auditService.log({
       schoolId: 'school_cdnghe01_bqp',

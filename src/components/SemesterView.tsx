@@ -8,12 +8,15 @@ import {
   Settings,
   Check,
   Share2,
+  Users,
+  UserX,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import {
   formatVietnameseNumber,
   getRankBadgeClass,
   exportToExcel,
+  getRankRangeDescription,
 } from '../lib/utils';
 import { TabType } from './Navbar';
 import { SummaryZaloExportModal } from './SummaryZaloExportModal';
@@ -41,10 +44,58 @@ export const SemesterView: React.FC<SemesterViewProps> = ({
     return activeSemester === 1 ? classConfig.semester1Months : classConfig.semester2Months;
   }, [activeSemester, classConfig]);
 
+  const [rankFilter, setRankFilter] = useState<string>('all');
+  const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'unexcused' | 'excused' | 'any'>('all');
+
   // Semester summary computed from raw logs
   const semesterData = useMemo(() => {
     return getSemesterSummary(activeSemester);
   }, [getSemesterSummary, activeSemester]);
+
+  // Attendance stats for quick filter buttons
+  const attendanceStats = useMemo(() => {
+    let unexcusedCount = 0;
+    let excusedCount = 0;
+    let anyAbsenceCount = 0;
+
+    semesterData.forEach((s) => {
+      const u = s.unexcusedAbsenceCount || 0;
+      const e = s.excusedAbsenceCount || 0;
+      const t = s.truancyCount || 0;
+      if (u > 0) unexcusedCount++;
+      if (e > 0) excusedCount++;
+      if (u > 0 || e > 0 || t > 0) anyAbsenceCount++;
+    });
+
+    return {
+      unexcusedCount,
+      excusedCount,
+      anyAbsenceCount,
+    };
+  }, [semesterData]);
+
+  // Filtered semester students
+  const filteredSemesterData = useMemo(() => {
+    let list = semesterData;
+
+    if (rankFilter !== 'all') {
+      list = list.filter((d) => {
+        if (rankFilter === 'Đạt' || rankFilter === 'Trung bình') return d.finalRank === 'Đạt' || d.finalRank === 'Trung bình';
+        if (rankFilter === 'Không đạt' || rankFilter === 'Yếu') return d.finalRank === 'Không đạt' || d.finalRank === 'Yếu';
+        return d.finalRank === rankFilter;
+      });
+    }
+
+    if (attendanceFilter === 'unexcused') {
+      list = list.filter((d) => (d.unexcusedAbsenceCount || 0) > 0);
+    } else if (attendanceFilter === 'excused') {
+      list = list.filter((d) => (d.excusedAbsenceCount || 0) > 0);
+    } else if (attendanceFilter === 'any') {
+      list = list.filter((d) => (d.unexcusedAbsenceCount || 0) > 0 || (d.excusedAbsenceCount || 0) > 0 || (d.truancyCount || 0) > 0);
+    }
+
+    return list;
+  }, [semesterData, rankFilter, attendanceFilter]);
 
   // Overall semester metrics
   const stats = useMemo(() => {
@@ -58,8 +109,10 @@ export const SemesterView: React.FC<SemesterViewProps> = ({
       'Xuất sắc': semesterData.filter((d) => d.finalRank === 'Xuất sắc').length,
       'Tốt': semesterData.filter((d) => d.finalRank === 'Tốt').length,
       'Khá': semesterData.filter((d) => d.finalRank === 'Khá').length,
-      'Trung bình': semesterData.filter((d) => d.finalRank === 'Trung bình').length,
-      'Yếu': semesterData.filter((d) => d.finalRank === 'Yếu').length,
+      'Đạt': semesterData.filter((d) => d.finalRank === 'Đạt' || d.finalRank === 'Trung bình').length,
+      'Không đạt': semesterData.filter((d) => d.finalRank === 'Không đạt' || d.finalRank === 'Yếu').length,
+      'Trung bình': semesterData.filter((d) => d.finalRank === 'Đạt' || d.finalRank === 'Trung bình').length,
+      'Yếu': semesterData.filter((d) => d.finalRank === 'Không đạt' || d.finalRank === 'Yếu').length,
     };
 
     return {
@@ -171,6 +224,15 @@ export const SemesterView: React.FC<SemesterViewProps> = ({
           </button>
 
           <button
+            onClick={() => onNavigateTab('attendance-report')}
+            className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 text-xs font-bold rounded-xl border border-rose-200 dark:border-rose-850 shadow-xs transition active:scale-95 cursor-pointer"
+            title="Mở Báo cáo danh sách học sinh nghỉ học chi tiết số buổi và lý do"
+          >
+            <UserX className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+            <span>Báo cáo nghỉ học</span>
+          </button>
+
+          <button
             onClick={() => setIsZaloModalOpen(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl shadow-sm transition active:scale-95"
             title="Sao chép hình ảnh Tổng kết Học kỳ để dán gửi nhóm Zalo phụ huynh"
@@ -260,29 +322,182 @@ export const SemesterView: React.FC<SemesterViewProps> = ({
         </div>
 
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-emerald-100 dark:border-emerald-900/40">
-          <span className="text-[11px] text-emerald-600 font-medium block">Học sinh Xuất sắc</span>
+          <span className="text-[11px] text-emerald-600 font-medium block">
+            Học sinh Xuất sắc {classConfig.rankThresholds?.xuatSacNote ? `(${classConfig.rankThresholds.xuatSacNote})` : '🎁'}
+          </span>
           <span className="text-2xl font-bold text-emerald-600">{stats.ranks['Xuất sắc']} HS</span>
-          <span className="text-[10px] text-slate-400 block mt-0.5">Đạt từ 9.0 đến 10.0</span>
+          <span className="text-[10px] text-slate-400 block mt-0.5">
+            {getRankRangeDescription('Xuất sắc', classConfig.rankThresholds)}
+          </span>
         </div>
 
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-blue-100 dark:border-blue-900/40">
           <span className="text-[11px] text-blue-600 font-medium block">Học sinh Tốt</span>
           <span className="text-2xl font-bold text-blue-600">{stats.ranks['Tốt']} HS</span>
-          <span className="text-[10px] text-slate-400 block mt-0.5">Đạt từ 8.0 đến dưới 9.0</span>
+          <span className="text-[10px] text-slate-400 block mt-0.5">
+            {getRankRangeDescription('Tốt', classConfig.rankThresholds)}
+          </span>
         </div>
 
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-amber-100 dark:border-amber-900/40">
-          <span className="text-[11px] text-amber-600 font-medium block">Học sinh Khá & TB</span>
+          <span className="text-[11px] text-amber-600 font-medium block">Học sinh Khá & Đạt</span>
           <span className="text-2xl font-bold text-amber-600">
-            {stats.ranks['Khá'] + stats.ranks['Trung bình']} HS
+            {stats.ranks['Khá'] + stats.ranks['Đạt']} HS
           </span>
-          <span className="text-[10px] text-slate-400 block mt-0.5">Khá: {stats.ranks['Khá']} | TB: {stats.ranks['Trung bình']}</span>
+          <span className="text-[10px] text-slate-400 block mt-0.5">
+            Khá: {getRankRangeDescription('Khá', classConfig.rankThresholds)} | Đạt: {getRankRangeDescription('Đạt', classConfig.rankThresholds)}
+          </span>
         </div>
 
         <div className="col-span-2 lg:col-span-1 bg-white dark:bg-slate-800 p-4 rounded-xl border border-rose-100 dark:border-rose-900/40">
-          <span className="text-[11px] text-rose-600 font-medium block">Cần rèn luyện thêm</span>
-          <span className="text-2xl font-bold text-rose-600">{stats.ranks['Yếu']} HS</span>
-          <span className="text-[10px] text-slate-400 block mt-0.5">Dưới 5.0 điểm</span>
+          <span className="text-[11px] text-rose-600 font-medium block">
+            Không đạt {classConfig.rankThresholds?.khongDatNote ? `(${classConfig.rankThresholds.khongDatNote})` : '⚠️'}
+          </span>
+          <span className="text-2xl font-bold text-rose-600">{stats.ranks['Không đạt']} HS</span>
+          <span className="text-[10px] text-slate-400 block mt-0.5">
+            {getRankRangeDescription('Không đạt', classConfig.rankThresholds)}
+          </span>
+        </div>
+      </div>
+
+      {/* KHỐI BỘ LỌC CHUYÊN CẦN & XẾP LOẠI HỌC KỲ */}
+      <div className="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-2.5 print:hidden">
+        {/* Dòng 1: Bộ lọc Chuyên Cần & Vắng Nghỉ */}
+        <div className="flex items-center justify-between flex-wrap gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-700/60">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-750 text-slate-700 dark:text-slate-300 font-bold text-xs shrink-0">
+              <Users className="h-3.5 w-3.5 text-blue-600" />
+              <span>Chuyên cần & Nghỉ học:</span>
+            </span>
+
+            <button
+              onClick={() => {
+                setAttendanceFilter('all');
+              }}
+              className={`px-3 py-1 rounded-lg transition font-semibold cursor-pointer text-xs ${
+                attendanceFilter === 'all'
+                  ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+              }`}
+            >
+              Tất cả chuyên cần
+            </button>
+
+            {/* Lọc: Nghỉ có phép */}
+            <button
+              onClick={() => {
+                setRankFilter('all');
+                setAttendanceFilter((prev) => (prev === 'excused' ? 'all' : 'excused'));
+              }}
+              className={`px-3 py-1 rounded-lg transition font-semibold flex items-center gap-1.5 border cursor-pointer text-xs ${
+                attendanceFilter === 'excused'
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-sm ring-2 ring-amber-400'
+                  : attendanceStats.excusedCount > 0
+                  ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800 font-bold'
+                  : 'bg-slate-50 dark:bg-slate-750 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+              }`}
+              title="Lọc danh sách học sinh có nghỉ học có phép trong học kỳ"
+            >
+              <span>📋 Nghỉ có phép</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
+                attendanceFilter === 'excused' ? 'bg-white/20 text-white' : 'bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100'
+              }`}>
+                {attendanceStats.excusedCount}
+              </span>
+            </button>
+
+            {/* Lọc: Nghỉ không phép */}
+            <button
+              onClick={() => {
+                setRankFilter('all');
+                setAttendanceFilter((prev) => (prev === 'unexcused' ? 'all' : 'unexcused'));
+              }}
+              className={`px-3 py-1 rounded-lg transition font-semibold flex items-center gap-1.5 border cursor-pointer text-xs ${
+                attendanceFilter === 'unexcused'
+                  ? 'bg-rose-600 text-white border-rose-600 shadow-sm ring-2 ring-rose-400'
+                  : attendanceStats.unexcusedCount > 0
+                  ? 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-800 font-bold'
+                  : 'bg-slate-50 dark:bg-slate-750 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+              }`}
+              title="Lọc danh sách học sinh nghỉ học không phép trong học kỳ"
+            >
+              <span>⚠️ Nghỉ không phép</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
+                attendanceFilter === 'unexcused' ? 'bg-white/20 text-white' : 'bg-rose-200 dark:bg-rose-900 text-rose-900 dark:text-rose-100'
+              }`}>
+                {attendanceStats.unexcusedCount}
+              </span>
+            </button>
+
+            {/* Tất cả học sinh có vắng nghỉ (dù có phép hay không phép) */}
+            <button
+              onClick={() => {
+                setRankFilter('all');
+                setAttendanceFilter((prev) => (prev === 'any' ? 'all' : 'any'));
+              }}
+              className={`px-3.5 py-1 rounded-lg transition font-medium flex items-center gap-1.5 border cursor-pointer text-xs ${
+                attendanceFilter === 'any'
+                  ? 'bg-rose-700 text-white border-rose-700 shadow-sm ring-2 ring-rose-400'
+                  : attendanceStats.anyAbsenceCount > 0
+                  ? 'bg-rose-100 text-rose-900 border-rose-300 hover:bg-rose-200 dark:bg-rose-950 dark:text-rose-100 dark:border-rose-700'
+                  : 'bg-slate-50 dark:bg-slate-750 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+              }`}
+              title="Danh sách tất cả học sinh có vắng nghỉ trong học kỳ (có phép hoặc không phép)"
+            >
+              <span>👥 Tất cả HS nghỉ</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-extrabold ${
+                attendanceFilter === 'any' ? 'bg-white/20 text-white' : 'bg-rose-600 text-white'
+              }`}>
+                {attendanceStats.anyAbsenceCount}
+              </span>
+            </button>
+          </div>
+
+          {(rankFilter !== 'all' || attendanceFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setRankFilter('all');
+                setAttendanceFilter('all');
+              }}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold flex items-center gap-1 cursor-pointer bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 rounded-lg"
+              title="Xóa toàn bộ bộ lọc và hiển thị tất cả học sinh"
+            >
+              <span>✕ Xóa tất cả bộ lọc</span>
+            </button>
+          )}
+        </div>
+
+        {/* Dòng 2: Bộ lọc Xếp loại thi đua */}
+        <div className="flex items-center gap-1.5 flex-wrap text-xs pt-0.5">
+          <span className="text-slate-500 font-medium shrink-0">Xếp loại thi đua:</span>
+          <button
+            onClick={() => {
+              setRankFilter('all');
+            }}
+            className={`px-3 py-1 rounded-lg transition font-semibold cursor-pointer ${
+              rankFilter === 'all'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-650'
+            }`}
+          >
+            Tất cả ({semesterData.length})
+          </button>
+          {(['Xuất sắc', 'Tốt', 'Khá', 'Đạt', 'Không đạt'] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => {
+                setAttendanceFilter('all');
+                setRankFilter((prev) => (prev === r ? 'all' : r));
+              }}
+              className={`px-2.5 py-1 rounded-lg transition font-semibold cursor-pointer ${
+                rankFilter === r
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-650'
+              }`}
+            >
+              {r} ({stats.ranks[r]})
+            </button>
+          ))}
         </div>
       </div>
 
@@ -308,7 +523,25 @@ export const SemesterView: React.FC<SemesterViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-              {semesterData.map((s, idx) => {
+              {filteredSemesterData.length === 0 ? (
+                <tr>
+                  <td colSpan={8 + currentMonths.length} className="py-12 text-center text-slate-500">
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      Không có học sinh nào phù hợp với bộ lọc hiện tại.
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {attendanceFilter === 'unexcused'
+                        ? 'Học kỳ này không có học sinh nào nghỉ học không phép.'
+                        : attendanceFilter === 'excused'
+                        ? 'Học kỳ này không có học sinh nào nghỉ học có phép.'
+                        : attendanceFilter === 'any'
+                        ? 'Học kỳ này không có học sinh nào nghỉ học (100% học sinh đi học đầy đủ).'
+                        : 'Vui lòng kiểm tra lại điều kiện lọc xếp loại.'}
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                filteredSemesterData.map((s, idx) => {
                 const rankBadge = getRankBadgeClass(s.finalRank);
                 return (
                   <tr
@@ -321,8 +554,22 @@ export const SemesterView: React.FC<SemesterViewProps> = ({
                     <td className="py-2.5 px-3 font-mono font-medium text-slate-700 dark:text-slate-300">
                       {s.studentCode}
                     </td>
-                    <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-white">
-                      {s.fullName}
+                    <td className="py-2.5 px-3">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-slate-900 dark:text-white">
+                          {s.fullName}
+                        </span>
+                        {s.unexcusedAbsenceCount > 0 && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-200">
+                            KP: {s.unexcusedAbsenceCount}
+                          </span>
+                        )}
+                        {s.excusedAbsenceCount > 0 && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-200">
+                            P: {s.excusedAbsenceCount}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Monthly scores */}
@@ -368,7 +615,7 @@ export const SemesterView: React.FC<SemesterViewProps> = ({
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

@@ -120,12 +120,12 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
   // Helper to compute a student's current overall score
   const getStudentCurrentScore = (studentId: string): number => {
     const logs = getStudentLogs(studentId);
-    let s = 10;
+    let s = classConfig.baseScore;
     for (const l of logs) {
       if (l.type === 'deduct') s -= l.totalScore;
       else s += l.totalScore;
     }
-    return clampScore(s);
+    return clampScore(s, classConfig.minScore);
   };
 
   // Sorting state:
@@ -1020,7 +1020,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
           student={viewingStudent}
           logs={getStudentLogs(viewingStudent.id)}
           currentScore={getStudentCurrentScore(viewingStudent.id)}
-          currentRank={calculateRank(getStudentCurrentScore(viewingStudent.id))}
+          currentRank={calculateRank(getStudentCurrentScore(viewingStudent.id), classConfig.rankThresholds)}
           onUpdateStudent={updateStudent}
         />
       )}

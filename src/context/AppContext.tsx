@@ -3,8 +3,10 @@ import { User, onAuthStateChanged } from 'firebase/auth';
 import { resolveLoginIdentifier } from '../lib/loginIdentifier';
 import { planStudentImport } from '../lib/studentImport';
 import { localDateString, validateLogNumbers } from '../lib/logValidation';
-import { logsForWeek } from '../lib/weeklyPeriod';
-import { rowsForClass, schoolWeeksFrom, validateSchoolYear } from '../lib/classScope';
+import { logsForWeek, targetDateForMovedWeek } from '../lib/weeklyPeriod';
+import { isMonthlyBonus, monthBreakdown, weekBreakdown, sameLogEntry } from '../lib/scoreBreakdown';
+import { currentSchoolYear, rowsForClass, schoolWeeksFrom, validateSchoolYear } from '../lib/classScope';
+import { formatVietnameseDate } from '../lib/utils';
 import {
   collection,
   doc,
@@ -58,6 +60,7 @@ import {
   getStudentsFromCloud,
   saveDisciplineLogToCloud,
   deleteDisciplineLogFromCloud,
+  restoreDisciplineLogFromCloud,
   getDisciplineLogsFromCloud,
   saveBehaviorCategoryToCloud,
   getBehaviorCategoriesFromCloud,
@@ -74,11 +77,13 @@ import {
 } from '../data/initialData';
 import { scopeBackup } from '../lib/scopedBackup';
 import { calculateRank, clampScore } from '../lib/utils';
+import { calculateAttendanceStats, formatAttendanceBadgeText, formatAttendanceDetailText } from '../lib/attendanceStats';
 
 interface AppContextType {
   workspaceClasses: ClassConfig[];
   selectWorkspaceClass: (id: string) => void;
   createWorkspaceClass: (name: string, year: string, start: string, ownerUid?: string) => Promise<void>;
+  deleteWorkspaceClass: (classConfigId: string) => Promise<void>;
   currentUser: User | null;
   isAuthLoading: boolean;
   isLocalMode: boolean;
@@ -121,7 +126,7 @@ interface AppContextType {
   enterInspectorMode: (classItem: SchoolClass) => void;
   exitInspectorMode: () => void;
   switchWorkingClass: (classItem: SchoolClass) => void;
-  toggleLockPeriod: (periodType: 'week' | 'month' | 'semester', periodValue: number, reason?: string) => void;
+  toggleLockPeriod: (periodType: 'week' | 'month' | 'semester', periodValue: number, reason?: string) => Promise<boolean>;
   updateUserAccount: (uid: string, updates: Partial<UserAccount>) => void;
   resetUserPassword: (uid: string) => Promise<{ success: boolean; tempPass: string }>;
   toggleUserAccountStatus: (uid: string) => void;
@@ -192,7 +197,10 @@ interface AppContextType {
   addDisciplineLog: (log: Omit<DisciplineLog, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId' | 'totalScore'>) => Promise<{ log: DisciplineLog; duplicateWarning?: boolean }>;
   addBulkDisciplineLogs: (logs: Array<Omit<DisciplineLog, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId' | 'totalScore'>>) => Promise<{ logs: DisciplineLog[] }>;
   updateDisciplineLog: (id: string, updates: Partial<DisciplineLog>, editorName: string) => Promise<void>;
+  moveDisciplineLogToWeek: (id: string, targetWeekNumber: number, editorName?: string, customNote?: string) => Promise<void>;
+  batchMoveDisciplineLogsToWeek: (logIds: string[], targetWeekNumber: number, editorName?: string, customNote?: string) => Promise<{ movedCount: number; errors: string[] }>;
   deleteDisciplineLog: (id: string, editorName: string) => Promise<void>;
+  restoreDisciplineLog: (log: DisciplineLog) => Promise<void>;
   importDisciplineLogsBatch: (newLogs: Array<Omit<DisciplineLog, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId' | 'totalScore'>>) => Promise<{ imported: number }>;
 
   // Calculated views
@@ -218,16 +226,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isCloudSyncing, setIsCloudSyncing] = useState<boolean>(false);
   const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
 
+  const normalizeConfig = (config: ClassConfig): ClassConfig => ({
+    ...config,
+    maxScore: config.maxScore && config.maxScore > 10 ? config.maxScore : 100,
+  });
+
   // Core collections in memory
-  const [classConfig, applyClassConfig] = useState<ClassConfig>({ ...INITIAL_CLASS_CONFIG, id: '', teacherId: '', className: '', homeroomTeacher: '', teacherEmail: '', teacherPhone: '' });
+  const [classConfig, applyClassConfig] = useState<ClassConfig>(() => normalizeConfig({ ...INITIAL_CLASS_CONFIG, id: '', teacherId: '', className: '', homeroomTeacher: '', teacherEmail: '', teacherPhone: '' }));
   const scopeRef = useRef(classConfig);
-  const setClassConfig = (config: ClassConfig) => { scopeRef.current = config; applyClassConfig(config); };
+  const setClassConfig = (config: ClassConfig) => {
+    const normalized = normalizeConfig(config);
+    scopeRef.current = normalized;
+    applyClassConfig(normalized);
+  };
   const [students, applyStudents] = useState<Student[]>([]);
   const [behaviorCategories, applyCategories] = useState<BehaviorCategory[]>([]);
   const [disciplineLogs, applyLogs] = useState<DisciplineLog[]>([]);
   // Late Firebase writes from a previous class must never populate the new view.
   const setStudents: React.Dispatch<React.SetStateAction<Student[]>> = action => applyStudents(prev => rowsForClass(typeof action === 'function' ? action(prev) : action, scopeRef.current));
-  const setBehaviorCategories: React.Dispatch<React.SetStateAction<BehaviorCategory[]>> = action => applyCategories(prev => rowsForClass(typeof action === 'function' ? action(prev) : action, scopeRef.current, true));
+  const setBehaviorCategories: React.Dispatch<React.SetStateAction<BehaviorCategory[]>> = action => applyCategories(prev => {
+    const loaded = rowsForClass(typeof action === 'function' ? action(prev) : action, scopeRef.current, true);
+    if (!loaded.length) return INITIAL_BEHAVIOR_CATEGORIES;
+    const currentCodes = new Set(loaded.map(c => c.code));
+    const missing = INITIAL_BEHAVIOR_CATEGORIES.filter(c => !currentCodes.has(c.code)).map(c => ({
+      ...c,
+      id: `cat_${scopeRef.current.id}_${c.code}`,
+      classId: scopeRef.current.id,
+      teacherId: scopeRef.current.teacherId,
+    }));
+    return missing.length > 0 ? [...loaded, ...missing] : loaded;
+  });
   const setDisciplineLogs: React.Dispatch<React.SetStateAction<DisciplineLog[]>> = action => applyLogs(prev => rowsForClass(typeof action === 'function' ? action(prev) : action, scopeRef.current));
 
   // Cloud profiles, never cached roles or passwords, determine access.
@@ -260,6 +288,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
   const isPeriodLocked = (periodType: 'week' | 'month' | 'semester', periodValue: number): boolean =>
     lockedPeriods.some((period) => (period.classId === classConfig.id || (!period.classId && classConfig.scopeVersion !== 2)) && period.periodType === periodType && period.periodValue === periodValue && period.isLocked);
+  const scoreLock = (type: 'week' | 'month' | 'semester', value: number) => lockedPeriods.find(p => (p.classId === classConfig.id || (!p.classId && classConfig.scopeVersion !== 2)) && p.periodType === type && p.periodValue === value && p.isLocked);
+  const legacyMonth = (month: number) => {
+    const lock = scoreLock('month', month) || scoreLock('semester', classConfig.semester1Months.includes(month) ? 1 : 2);
+    return (!!lock && lock.scoreVersion !== 2) || (classConfig.monthlyAverageFromMonth !== undefined && classConfig.months.indexOf(month) < classConfig.months.indexOf(classConfig.monthlyAverageFromMonth));
+  };
 
   const enterInspectorMode = (classItem: SchoolClass) => {
     // Teachers are strictly restricted to their own homeroom class
@@ -287,10 +320,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const old = lockedPeriods.find((item) => (item.classId || undefined) === classId && item.periodType === periodType && item.periodValue === periodValue);
     const next: PeriodLockStatus = { ...old, classId, periodType, periodValue, isLocked: !old?.isLocked,
       lockedAt: new Date().toISOString(), lockedBy: activeAccount?.displayName || '', reason: reason || old?.reason || '' };
+    if (next.isLocked) {
+      const summaries = periodType === 'week' ? getWeeklySummary(periodValue) : periodType === 'month' ? getMonthlySummary(periodValue) : getSemesterSummary(periodValue as 1 | 2);
+      const review = summaries.map(s => `${s.fullName}: ${'finalScore' in s ? s.finalScore : s.averageScore}đ`).join('\n');
+      if (!window.confirm(`Rà soát trước khi chốt ${periodType === 'week' ? 'tuần' : periodType === 'month' ? 'tháng' : 'học kỳ'} ${periodValue}\n${review}\n\nXác nhận đã kiểm tra lỗi, thưởng và điểm tổng kết?`)) return false;
+      next.scoreVersion = 2;
+      next.scores = Object.fromEntries(summaries.map(s => [s.studentId, 'finalScore' in s ? s.finalScore : s.averageScore]));
+      if (periodType === 'semester') next.monthlyScores = Object.fromEntries((periodValue === 1 ? classConfig.semester1Months : classConfig.semester2Months).map(m => [m, Object.fromEntries(getMonthlySummary(m).map(s => [s.studentId, s.finalScore]))]));
+    }
     try {
       await savePeriodLockToCloud(next);
       setLockedPeriods((prev) => [...prev.filter((item) => (item.classId || undefined) !== classId || item.periodType !== periodType || item.periodValue !== periodValue), next]);
-    } catch (error: any) { setCloudSyncError(error.message); alert('Không lưu được khóa sổ: ' + error.message); }
+      return true;
+    } catch (error: any) { setCloudSyncError(error.message); alert('Không lưu được khóa sổ: ' + error.message); return false; }
   };
 
   const updateUserAccount = async (uid: string, updates: Partial<UserAccount>) => {
@@ -506,6 +548,70 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setClassConfig(config); setSelectedConfigId(id);
   };
 
+  const deleteWorkspaceClass = async (configId: string) => {
+    if (!activeAccount || activeAccount.role === 'monitor' || inspectorModeClass) {
+      throw new Error('Bạn không có quyền xóa lớp học ở chế độ này.');
+    }
+    const targetConfig = workspaceClasses.find((c) => c.id === configId);
+    if (!targetConfig) throw new Error('Không tìm thấy lớp học cần xóa.');
+
+    if (
+      targetConfig.teacherId &&
+      targetConfig.teacherId !== activeAccount.uid &&
+      !['admin', 'owner'].includes(activeAccount.role)
+    ) {
+      throw new Error('Bạn chỉ có quyền xóa lớp do chính mình quản lý.');
+    }
+
+    const remainingClasses = workspaceClasses.filter((c) => c.id !== configId);
+    if (remainingClasses.length === 0) {
+      throw new Error('Không thể xóa lớp duy nhất. Hệ thống cần duy trì ít nhất một lớp học (hãy tạo lớp mới trước khi xóa lớp này).');
+    }
+
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'classConfigs', configId));
+
+    const directoryId = targetConfig.classDirectoryId || (targetConfig.id.startsWith('cfg_') ? targetConfig.id.slice(4) : targetConfig.id);
+    batch.delete(doc(db, 'classes', directoryId));
+
+    try {
+      const [studentsSnap, logsSnap, catsSnap, monitorsSnap] = await Promise.all([
+        getDocs(query(collection(db, 'students'), where('classId', '==', configId))),
+        getDocs(query(collection(db, 'disciplineLogs'), where('classId', '==', configId))),
+        getDocs(query(collection(db, 'behaviorCategories'), where('classId', '==', configId))),
+        getDocs(query(collection(db, 'users'), where('classConfigId', '==', configId))),
+      ]);
+
+      studentsSnap.docs.forEach((d) => batch.delete(d.ref));
+      logsSnap.docs.forEach((d) => batch.delete(d.ref));
+      catsSnap.docs.forEach((d) => batch.delete(d.ref));
+      monitorsSnap.docs.forEach((d) => batch.update(d.ref, { isActive: false, classConfigId: '' }));
+
+      await batch.commit();
+    } catch (err) {
+      console.warn('Batch delete sub-collections warning:', err);
+      try {
+        await deleteDoc(doc(db, 'classConfigs', configId));
+        await deleteDoc(doc(db, 'classes', directoryId));
+      } catch (e) {
+        throw err;
+      }
+    }
+
+    setSchoolClasses((prev) => prev.filter((item) => item.id !== directoryId && item.id !== configId));
+    loadVersion.current++;
+    setWorkspaceClasses(remainingClasses);
+
+    if (classConfig.id === configId || selectedConfigId === configId) {
+      const nextConfig = remainingClasses[0];
+      setClassConfig(nextConfig);
+      setSelectedConfigId(nextConfig.id);
+      setStudents([]);
+      setDisciplineLogs([]);
+      setBehaviorCategories([]);
+    }
+  };
+
   useEffect(() => {
     if (!currentUser || !activeAccount || currentUser.uid !== activeAccount.uid) return;
     const teacherId = activeAccount.role === 'monitor' ? activeAccount.teacherId : (inspectorModeClass?.teacherId || activeAccount.uid);
@@ -653,7 +759,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           teacherName: user.displayName || 'Giáo viên',
           teacherEmail: user.email || '',
           department: 'Khoa Chuyên ngành',
-          schoolYear: '2025 - 2026',
+          schoolYear: currentSchoolYear(),
           studentCount: 0,
           averageScore: 10.0,
           topRankCount: 0,
@@ -749,7 +855,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         teacherName: user.displayName || 'Giáo viên',
         teacherEmail: user.email || '',
         department: department || 'Khoa Chuyên ngành',
-        schoolYear: '2025 - 2026',
+        schoolYear: currentSchoolYear(),
         studentCount: 0,
         averageScore: 10.0,
         topRankCount: 0,
@@ -837,7 +943,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         teacherName: params.name,
         teacherEmail: effectiveEmail,
         department: params.department || 'Khoa Chuyên ngành',
-        schoolYear: '2025 - 2026',
+        schoolYear: currentSchoolYear(),
         studentCount: 0,
         averageScore: 10.0,
         topRankCount: 0,
@@ -1202,7 +1308,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!student) throw new Error('Không tìm thấy thông tin học sinh');
 
     const effectiveScore = params.customScore !== undefined ? params.customScore : (params.rule?.bonusScore ?? 2.0);
-    const targetWeek = params.weekNumber || 1;
+    const targetWeek = params.weekNumber || classConfig.weeks.find(w => w.month === params.month && !isPeriodLocked('week', w.weekNumber))?.weekNumber || classConfig.weeks.find(w => w.month === params.month)?.weekNumber || 1;
     const targetMonth = params.month || (classConfig.weeks.find((w) => w.weekNumber === targetWeek)?.month || 9);
     const isWeekly = params.weekNumber !== undefined || params.rule?.period === 'weekly';
     const periodType = isWeekly ? 'weekly' : 'monthly';
@@ -1225,6 +1331,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const ruleCode = params.rule?.code || `TT_CUSTOM_${Date.now()}`;
     const defaultTitle = isWeekly ? `Khen thưởng tuần ${targetWeek}` : `Khen thưởng tháng ${targetMonth}`;
     const displayTitle = params.rule?.title || params.customNote?.trim() || defaultTitle;
+    if (!params.rule && disciplineLogs.some(l => l.studentId === params.studentId && l.type === 'bonus' && (isWeekly ? l.weekNumber === targetWeek : l.month === targetMonth) && l.behaviorDescription === `[Thành tích ${periodType === 'weekly' ? 'tuần' : 'tháng'}] ${displayTitle}`)) throw new Error('Thành tích này đã được trao trong kỳ. Hãy sửa bản ghi thưởng đã có.');
 
     const logRes = await addDisciplineLog({
       date: todayStr,
@@ -1288,6 +1395,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     logData: Omit<DisciplineLog, 'id' | 'createdAt' | 'updatedAt' | 'teacherId' | 'classId' | 'totalScore'>
   ): Promise<{ log: DisciplineLog; duplicateWarning?: boolean }> => {
     validateLogNumbers(logData);
+    if (isPeriodLocked('month', logData.month) || isPeriodLocked('semester', classConfig.semester1Months.includes(logData.month) ? 1 : 2)) throw new Error('Tháng hoặc học kỳ đã khóa. Không thể ghi nhận.');
     if (isPeriodLocked('week', logData.weekNumber)) {
       throw new Error(`Tuần ${logData.weekNumber} đã được khóa thi đua bởi Ban Giám Hiệu. Không thể thêm mới dữ liệu.`);
     }
@@ -1304,14 +1412,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const teacherId = getEffectiveTeacherId();
     const effectiveReporter = logData.reporter || (activeAccount?.role === 'monitor' ? `Lớp trưởng ${activeAccount.displayName}` : classConfig.homeroomTeacher || 'GVCN');
 
-    // Check potential duplicate (same student, same date, same behaviorCode, and period if filled)
-    const isDuplicate = disciplineLogs.some(
-      (l) =>
-        l.studentId === logData.studentId &&
-        l.date === logData.date &&
-        l.behaviorCode.toUpperCase() === logData.behaviorCode.toUpperCase() &&
-        (logData.periodOrTime ? l.periodOrTime === logData.periodOrTime : true)
-    );
+    const isDuplicate = disciplineLogs.some(l => sameLogEntry(l, logData));
+    if (isDuplicate) throw new Error('Bản ghi này đã có: cùng học sinh, ngày, tiết và hành vi. Hãy sửa bản ghi cũ hoặc tăng số lần.');
 
     const newLog: DisciplineLog = {
       ...logData,
@@ -1349,6 +1451,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   ): Promise<{ logs: DisciplineLog[] }> => {
     if (!logsData || logsData.length === 0) return { logs: [] };
     logsData.forEach(validateLogNumbers);
+    if (logsData.some(data => isPeriodLocked('week', data.weekNumber) || isPeriodLocked('month', data.month) || isPeriodLocked('semester', classConfig.semester1Months.includes(data.month) ? 1 : 2))) throw new Error('Có bản ghi thuộc kỳ đã khóa. Không thể lưu.');
+    if (logsData.some((data, index) => disciplineLogs.some(l => sameLogEntry(l, data)) || logsData.slice(0, index).some(l => sameLogEntry(l, data)))) throw new Error('Có bản ghi trùng học sinh, ngày, tiết và hành vi. Hãy kiểm tra lại danh sách trước khi lưu.');
 
     const first = logsData[0];
     if (isPeriodLocked('week', first.weekNumber)) {
@@ -1406,11 +1510,42 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const target = disciplineLogs.find((l) => l.id === id);
     if (!target) return;
 
-    if (isPeriodLocked('week', target.weekNumber)) {
-      throw new Error(`Tuần ${target.weekNumber} đã được khóa thi đua. Không thể chỉnh sửa bản ghi.`);
+    if (isPeriodLocked('week', target.weekNumber) || isPeriodLocked('month', target.month) || isPeriodLocked('semester', classConfig.semester1Months.includes(target.month) ? 1 : 2)) {
+      throw new Error(`Tuần, tháng hoặc học kỳ của bản ghi đã khóa thi đua. Không thể chỉnh sửa.`);
     }
 
-    const previousDesc = `${target.behaviorCode} - ${target.behaviorDescription} (${target.count} lần, ${target.scorePerUnit}đ, tổng: ${target.totalScore}đ)`;
+    // Determine target week and month if date is updated
+    let newWeekNumber = updates.weekNumber ?? target.weekNumber;
+    let newMonth = updates.month ?? target.month;
+    let newDate = updates.date ?? target.date;
+    if (updates.date && updates.date !== target.date) {
+      const matchingWeek = classConfig.weeks.find((w) => w.startDate <= updates.date! && updates.date! <= w.endDate);
+      if (matchingWeek) {
+        newWeekNumber = matchingWeek.weekNumber;
+        newMonth = matchingWeek.month;
+      } else {
+        const d = new Date(updates.date);
+        if (!isNaN(d.getTime())) {
+          newMonth = d.getMonth() + 1;
+        }
+      }
+    } else if (updates.weekNumber && updates.weekNumber !== target.weekNumber) {
+      const matchingWeek = classConfig.weeks.find((w) => w.weekNumber === updates.weekNumber);
+      if (matchingWeek) {
+        newMonth = matchingWeek.month;
+        newDate = targetDateForMovedWeek(target.date, matchingWeek);
+      }
+    }
+
+    if (isPeriodLocked('week', newWeekNumber)) {
+      throw new Error(`Tuần ${newWeekNumber} đã được khóa thi đua. Không thể chuyển bản ghi sang tuần này.`);
+    }
+    if (isPeriodLocked('month', newMonth) || isPeriodLocked('semester', classConfig.semester1Months.includes(newMonth) ? 1 : 2)) {
+      throw new Error(`Tháng ${newMonth} hoặc học kỳ của ngày mới đã được khóa thi đua.`);
+    }
+
+    const dateChanged = Boolean(newDate !== target.date);
+    const previousDesc = `${target.date ? `[${formatVietnameseDate(target.date)}] ` : ''}${target.behaviorCode} - ${target.behaviorDescription} (${target.count} lần, ${target.scorePerUnit}đ, tổng: ${target.totalScore}đ)`;
     const newCount = updates.count ?? target.count;
     const newScorePerUnit = updates.scorePerUnit ?? target.scorePerUnit;
     const calculatedTotalScore = Math.round(newCount * newScorePerUnit * 100) / 100;
@@ -1420,12 +1555,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       editorName: editorName || classConfig.homeroomTeacher || 'Giáo viên',
       action: 'update',
       previousValue: previousDesc,
-      newValue: `Cập nhật: ${updates.behaviorCode ?? target.behaviorCode} - ${updates.behaviorDescription ?? target.behaviorDescription} (${newCount} lần, ${newScorePerUnit}đ, tổng: ${calculatedTotalScore}đ)`,
+      newValue: `Cập nhật: ${dateChanged ? `[Ngày ${formatVietnameseDate(newDate)}] ` : ''}${updates.behaviorCode ?? target.behaviorCode} - ${updates.behaviorDescription ?? target.behaviorDescription} (${newCount} lần, ${newScorePerUnit}đ, tổng: ${calculatedTotalScore}đ)`,
     };
 
     const updatedLog: DisciplineLog = {
       ...target,
       ...updates,
+      date: newDate,
+      weekNumber: newWeekNumber,
+      month: newMonth,
       totalScore: calculatedTotalScore,
       updatedAt: new Date().toISOString(),
       history: [...(target.history || []), historyEntry],
@@ -1440,22 +1578,134 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // Move Weekly Bonus / Discipline Log to another week
+  const moveDisciplineLogToWeek = async (
+    id: string,
+    targetWeekNumber: number,
+    editorName?: string,
+    customNote?: string
+  ) => {
+    const target = disciplineLogs.find((l) => l.id === id);
+    if (!target) throw new Error('Không tìm thấy bản ghi điểm.');
+
+    if (
+      isPeriodLocked('week', target.weekNumber) ||
+      isPeriodLocked('month', target.month) ||
+      isPeriodLocked('semester', classConfig.semester1Months.includes(target.month) ? 1 : 2)
+    ) {
+      throw new Error(`Tuần ${target.weekNumber} hoặc tháng hiện tại đã khóa thi đua. Không thể di chuyển.`);
+    }
+
+    const targetWeek = classConfig.weeks.find((w) => w.weekNumber === targetWeekNumber);
+    if (!targetWeek) throw new Error(`Không tìm thấy cấu hình Tuần ${targetWeekNumber}.`);
+
+    if (
+      isPeriodLocked('week', targetWeek.weekNumber) ||
+      isPeriodLocked('month', targetWeek.month) ||
+      isPeriodLocked('semester', classConfig.semester1Months.includes(targetWeek.month) ? 1 : 2)
+    ) {
+      throw new Error(`Tuần ${targetWeekNumber} hoặc Tháng ${targetWeek.month} đã khóa thi đua. Không thể chuyển vào tuần này.`);
+    }
+
+    if (target.weekNumber === targetWeekNumber) {
+      throw new Error(`Bản ghi hiện tại đã thuộc Tuần ${targetWeekNumber}.`);
+    }
+
+    const newDate = targetDateForMovedWeek(target.date, targetWeek);
+
+    // Update periodOrTime if it mentions the old week
+    let newPeriodOrTime = target.periodOrTime;
+    if (newPeriodOrTime && newPeriodOrTime.includes(`Tuần ${target.weekNumber}`)) {
+      newPeriodOrTime = newPeriodOrTime.replace(`Tuần ${target.weekNumber}`, `Tuần ${targetWeekNumber}`);
+    } else if (!newPeriodOrTime) {
+      newPeriodOrTime = `Tổng kết Tuần ${targetWeekNumber}`;
+    }
+
+    // Update behaviorDescription if it contains default weekly title
+    let newBehaviorDesc = target.behaviorDescription;
+    if (newBehaviorDesc.includes(`Khen thưởng tuần ${target.weekNumber}`)) {
+      newBehaviorDesc = newBehaviorDesc.replace(`Khen thưởng tuần ${target.weekNumber}`, `Khen thưởng tuần ${targetWeekNumber}`);
+    }
+
+    const moveTag = customNote?.trim() || `(Chuyển từ Tuần ${target.weekNumber} sang Tuần ${targetWeekNumber})`;
+    const updatedNote = target.note ? `${target.note} • ${moveTag}` : moveTag;
+
+    const historyEntry: EditHistoryEntry = {
+      timestamp: new Date().toISOString(),
+      editorName: editorName || activeAccount?.displayName || classConfig.homeroomTeacher || 'Giáo viên',
+      action: 'update',
+      previousValue: `Tuần ${target.weekNumber} (Ngày ${target.date})`,
+      newValue: `Di chuyển sang Tuần ${targetWeekNumber} (Ngày ${newDate})`,
+    };
+
+    const updatedLog: DisciplineLog = {
+      ...target,
+      weekNumber: targetWeek.weekNumber,
+      month: targetWeek.month,
+      date: newDate,
+      periodOrTime: newPeriodOrTime,
+      behaviorDescription: newBehaviorDesc,
+      note: updatedNote,
+      updatedAt: new Date().toISOString(),
+      history: [...(target.history || []), historyEntry],
+    };
+    validateLogNumbers(updatedLog);
+
+    try {
+      await saveDisciplineLogToCloud(updatedLog);
+      setDisciplineLogs((prev) => prev.map((l) => (l.id === id ? updatedLog : l)));
+    } catch (err) {
+      setCloudSyncError(String(err));
+      throw err;
+    }
+  };
+
+  const batchMoveDisciplineLogsToWeek = async (
+    logIds: string[],
+    targetWeekNumber: number,
+    editorName?: string,
+    customNote?: string
+  ): Promise<{ movedCount: number; errors: string[] }> => {
+    let movedCount = 0;
+    const errors: string[] = [];
+    for (const id of logIds) {
+      try {
+        await moveDisciplineLogToWeek(id, targetWeekNumber, editorName, customNote);
+        movedCount++;
+      } catch (err: any) {
+        errors.push(err.message || String(err));
+      }
+    }
+    return { movedCount, errors };
+  };
+
   // Delete Discipline Log with period lock guard
   const deleteDisciplineLog = async (id: string, editorName: string) => {
     if (userRole === 'monitor') {
       throw new Error('Lớp trưởng không có quyền xóa bản ghi điểm nề nếp. Vui lòng báo Giáo viên chủ nhiệm!');
     }
     const target = disciplineLogs.find((l) => l.id === id);
+    if (target && (isPeriodLocked('month', target.month) || isPeriodLocked('semester', classConfig.semester1Months.includes(target.month) ? 1 : 2))) throw new Error('Tháng hoặc học kỳ đã khóa. Không thể xóa bản ghi.');
     if (target && isPeriodLocked('week', target.weekNumber)) {
       throw new Error(`Tuần ${target.weekNumber} đã được khóa thi đua. Không thể xóa bản ghi.`);
     }
 
     try {
-      await deleteDisciplineLogFromCloud(id);
+      await deleteDisciplineLogFromCloud(id, target, editorName);
       setDisciplineLogs((prev) => prev.filter((l) => l.id !== id));
     } catch (err) {
       setCloudSyncError(String(err)); throw err;
     }
+  };
+
+  const restoreDisciplineLog = async (log: DisciplineLog) => {
+    if (userRole === 'monitor') throw new Error('Chỉ giáo viên được hoàn tác xóa.');
+    if (log.classId !== classConfig.id || log.teacherId !== getEffectiveTeacherId()) throw new Error('Bản ghi thuộc lớp khác.');
+    if (isPeriodLocked('week', log.weekNumber) || isPeriodLocked('month', log.month) || isPeriodLocked('semester', classConfig.semester1Months.includes(log.month) ? 1 : 2)) throw new Error('Kỳ đã khóa. Không thể hoàn tác.');
+    if (disciplineLogs.some(l => l.id === log.id || sameLogEntry(l, log))) throw new Error('Bản ghi đã được khôi phục hoặc có bản ghi tương tự.');
+    const next = { ...log, createdBy: auth.currentUser?.uid, updatedAt: new Date().toISOString(), history: [...(log.history || []), { timestamp: new Date().toISOString(), editorName: activeAccount?.displayName || classConfig.homeroomTeacher, action: 'update' as const, newValue: 'Hoàn tác xóa bản ghi nhập sai' }] };
+    await restoreDisciplineLogFromCloud(next);
+    setDisciplineLogs(prev => [next, ...prev.filter(l => l.id !== next.id)]);
   };
 
   // Batch import discipline logs (Nhật ký lỗi / nề nếp)
@@ -1512,7 +1762,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Rule: Điểm tuần = clamp (0 - 10) của (10 - tổng điểm trừ + tổng điểm cộng)
   const getWeeklySummary = (weekNumber: number, month?: number): StudentWeeklySummary[] => {
     // Filter logs for this week
-    const weekLogs = logsForWeek(disciplineLogs, weekNumber);
+    const lock = scoreLock('week', weekNumber);
+    const oldLocked = !!lock && lock.scoreVersion !== 2;
+    const weekLogs = logsForWeek(disciplineLogs, weekNumber).filter(l => oldLocked || !isMonthlyBonus(l));
 
     return students.map((s) => {
       const studentLogs = weekLogs.filter((l) => l.studentId === s.id);
@@ -1541,9 +1793,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const achievementCount = achievementLogs.length;
       const achievements = achievementLogs.map((l) => l.behaviorDescription.replace('[Thành tích tuần] ', '').replace('[Thành tích tháng] ', ''));
 
+      const attStats = calculateAttendanceStats(studentLogs);
+      const hasAbsence = attStats.excusedAbsenceCount > 0 || attStats.unexcusedAbsenceCount > 0 || attStats.truancyCount > 0;
+
       const rawScore = classConfig.baseScore - totalDeduct + totalBonus;
-      const finalScore = clampScore(rawScore, classConfig.minScore, classConfig.maxScore);
-      const rank = calculateRank(finalScore);
+      const finalScore = lock?.scores?.[s.id] ?? clampScore(rawScore, classConfig.minScore);
+      const rank = calculateRank(finalScore, classConfig.rankThresholds);
 
       let notes = '';
       if (achievementCount > 0) {
@@ -1559,6 +1814,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         notes = 'Nề nếp tốt, duy trì trọn vẹn điểm nền';
       }
 
+      if (hasAbsence) {
+        notes = `Vắng (${formatAttendanceBadgeText(attStats)}). ` + notes;
+      }
+
       return {
         studentId: s.id,
         studentCode: s.studentCode,
@@ -1569,6 +1828,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         bonusCount,
         totalDeduct,
         totalBonus,
+        excusedAbsenceCount: attStats.excusedAbsenceCount,
+        unexcusedAbsenceCount: attStats.unexcusedAbsenceCount,
+        truancyCount: attStats.truancyCount,
         achievementBonus,
         achievementCount,
         achievements,
@@ -1580,7 +1842,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // CALCULATION LOGIC: Monthly Summary
-  // Rule: Điểm tháng = clamp (0 - 10) của (10 - tổng điểm trừ tháng + tổng điểm cộng tháng)
+  // Monthly average of completed/finalized weeks plus month-only awards;
+  // pre-upgrade locked periods retain their legacy formula or frozen scores.
   const getMonthlySummary = (month: number): StudentMonthlySummary[] => {
     const monthLogs = disciplineLogs.filter((l) => l.month === month);
 
@@ -1609,15 +1872,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const achievementLogs = studentLogs.filter(
         (l) => l.type === 'bonus' && (l.behaviorCode.startsWith('TT_') || l.behaviorDescription.includes('[Thành tích'))
       );
-      const achievementBonus = Math.round(achievementLogs.reduce((acc, curr) => acc + curr.totalScore, 0) * 100) / 100;
-      const achievementCount = achievementLogs.length;
-      const achievements = achievementLogs.map((l) => l.behaviorDescription.replace('[Thành tích tuần] ', '').replace('[Thành tích tháng] ', ''));
+      const monthlyAchievements = achievementLogs.filter(isMonthlyBonus);
+      const achievementBonus = Math.round(monthlyAchievements.reduce((acc, curr) => acc + curr.totalScore, 0) * 100) / 100;
+      const achievementCount = monthlyAchievements.length;
+      const achievements = monthlyAchievements.map(l => l.behaviorDescription.replace('[Thành tích tháng] ', ''));
 
-      const rawScore = classConfig.baseScore - totalDeduct + totalBonus;
-      const finalScore = clampScore(rawScore, classConfig.minScore, classConfig.maxScore);
-      const rank = calculateRank(finalScore);
+      const allStudentLogs = disciplineLogs.filter(l => l.studentId === s.id);
+      const breakdown = monthBreakdown(allStudentLogs, classConfig, month, w => isPeriodLocked('week', w), legacyMonth(month), undefined, w => {
+        const lock = scoreLock('week', w);
+        return lock?.scores?.[s.id] ?? (lock && lock.scoreVersion !== 2 ? weekBreakdown(allStudentLogs.filter(l => l.weekNumber === w), classConfig, true).score : undefined);
+      });
+      const attStats = calculateAttendanceStats(studentLogs);
+      const hasAbsence = attStats.excusedAbsenceCount > 0 || attStats.unexcusedAbsenceCount > 0 || attStats.truancyCount > 0;
+
+      const weeks = breakdown.weeks.map(w => w.score);
+      const score = breakdown.score;
+      const finalScore = scoreLock('month', month)?.scores?.[s.id] ?? scoreLock('semester', classConfig.semester1Months.includes(month) ? 1 : 2)?.monthlyScores?.[month]?.[s.id] ?? Math.round(score * 100) / 100;
+      const rank = calculateRank(finalScore, classConfig.rankThresholds);
 
       let notes = '';
+      const xuatSacThreshold = classConfig.rankThresholds?.xuatSac ?? 12;
+      const datThreshold = classConfig.rankThresholds?.dat ?? 5;
       if (achievementCount > 0) {
         notes = `🏆 Nhận thưởng ${achievementCount} thành tích tháng (+${achievementBonus}đ)`;
         if (violationCount > 0) notes += `, ${violationCount} lỗi (-${totalDeduct}đ)`;
@@ -1625,12 +1900,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         notes = 'Ý thức nề nếp tháng gương mẫu';
       } else if (violationCount > 2) {
         notes = `Vi phạm lặp lại (${violationCount} lần), cần giáo viên theo dõi sát`;
-      } else if (finalScore >= 9) {
+      } else if (finalScore >= xuatSacThreshold) {
         notes = 'Đạt kết quả thi đua xuất sắc';
-      } else if (finalScore < 5) {
+      } else if (finalScore < datThreshold) {
         notes = 'Cần liên hệ phụ huynh phối hợp rèn luyện';
       } else {
         notes = 'Đạt yêu cầu rèn luyện nề nếp';
+      }
+
+      if (hasAbsence) {
+        notes = `Vắng (${formatAttendanceBadgeText(attStats)}). ` + notes;
       }
 
       return {
@@ -1639,8 +1918,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         fullName: s.fullName,
         status: s.status,
         weekDeductions,
+        monthlyBonus: breakdown.monthlyBonus,
+        weeklyBonus: Math.round((totalBonus - breakdown.monthlyBonus) * 100) / 100,
         totalDeduct,
         totalBonus,
+        excusedAbsenceCount: attStats.excusedAbsenceCount,
+        unexcusedAbsenceCount: attStats.unexcusedAbsenceCount,
+        truancyCount: attStats.truancyCount,
         achievementBonus,
         achievementCount,
         achievements,
@@ -1648,7 +1932,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         rank,
         violationCount,
         bonusCount,
-        notes,
+        notes: `${breakdown.legacy ? 'Công thức cũ' : `TB ${weeks.length} tuần ${weeks.length ? Math.round(weeks.reduce((n, v) => n + v, 0) / weeks.length * 100) / 100 : 'chưa có'} + thưởng tháng ${breakdown.monthlyBonus}đ`} → ${finalScore}đ. ${notes}`,
       };
     });
   };
@@ -1682,10 +1966,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         totalBonus += mBonus;
 
         // If there are records in the system for this month
-        const hasLogsInMonth = disciplineLogs.some((l) => l.month === m);
+        const hasLogsInMonth = disciplineLogs.some((l) => l.month === m) || isPeriodLocked('month', m) || classConfig.weeks.some(w => w.month === m && (w.endDate < localDateString() || isPeriodLocked('week', w.weekNumber)));
         if (hasLogsInMonth) {
-          const rawMScore = classConfig.baseScore - mDeduct + mBonus;
-          const clamped = clampScore(rawMScore, classConfig.minScore, classConfig.maxScore);
+          const clamped = getMonthlySummary(m).find(row => row.studentId === s.id)!.finalScore;
           monthlyScores[m] = clamped;
           scoreSum += clamped;
           monthsWithScoreCount++;
@@ -1694,8 +1977,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       });
 
-      const averageScore = monthsWithScoreCount > 0 ? clampScore(scoreSum / monthsWithScoreCount, classConfig.minScore, classConfig.maxScore) : classConfig.baseScore;
-      const finalRank = calculateRank(averageScore);
+      const averageScore = scoreLock('semester', semester)?.scores?.[s.id] ?? (monthsWithScoreCount > 0 ? clampScore(scoreSum / monthsWithScoreCount, classConfig.minScore) : classConfig.baseScore);
+      
+      const semesterLogs = disciplineLogs.filter((l) => l.studentId === s.id && targetMonths.includes(l.month));
+      const attStats = calculateAttendanceStats(semesterLogs);
+      const hasAbsence = attStats.excusedAbsenceCount > 0 || attStats.unexcusedAbsenceCount > 0 || attStats.truancyCount > 0;
+
+      const finalRank = calculateRank(averageScore, classConfig.rankThresholds);
 
       return {
         studentId: s.id,
@@ -1708,6 +1996,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         totalViolations,
         totalDeduct: Math.round(totalDeduct * 100) / 100,
         totalBonus: Math.round(totalBonus * 100) / 100,
+        excusedAbsenceCount: attStats.excusedAbsenceCount,
+        unexcusedAbsenceCount: attStats.unexcusedAbsenceCount,
+        truancyCount: attStats.truancyCount,
       };
     });
   };
@@ -1791,6 +2082,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         workspaceClasses,
         selectWorkspaceClass,
         createWorkspaceClass,
+        deleteWorkspaceClass,
         isPeriodLocked,
         loginAsRole,
         switchAccount,
@@ -1840,7 +2132,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addDisciplineLog,
         addBulkDisciplineLogs,
         updateDisciplineLog,
+        moveDisciplineLogToWeek,
+        batchMoveDisciplineLogsToWeek,
         deleteDisciplineLog,
+        restoreDisciplineLog,
         importDisciplineLogsBatch,
 
         getWeeklySummary,

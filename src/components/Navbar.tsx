@@ -24,6 +24,7 @@ import {
   Search,
   SlidersHorizontal,
   Check,
+  UserX,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -35,6 +36,7 @@ export type TabType =
   | 'weekly'
   | 'monthly'
   | 'semester'
+  | 'attendance-report'
   | 'students'
   | 'categories'
   | 'parent-report'
@@ -143,6 +145,13 @@ export const Navbar: React.FC<NavbarProps> = ({
           shortLabel: 'Học kỳ',
           icon: Award,
           description: 'Tổng kết rèn luyện HK1, HK2 & Cả năm',
+        },
+        {
+          id: 'attendance-report',
+          label: 'Báo cáo học sinh nghỉ học',
+          shortLabel: 'Nghỉ học',
+          icon: UserX,
+          description: 'Chi tiết số buổi nghỉ có phép, không phép, trốn tiết',
         },
       ],
     },

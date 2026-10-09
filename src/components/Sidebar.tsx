@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { currentSchoolYear } from '../lib/classScope';
 import {
   GraduationCap,
   LayoutDashboard,
@@ -23,6 +24,7 @@ import {
   UserCog,
   SlidersHorizontal,
   LogIn,
+  UserX,
 } from 'lucide-react';
 import { TabType } from './Navbar';
 import { useApp } from '../context/AppContext';
@@ -137,6 +139,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           shortLabel: 'Học kỳ',
           icon: Award,
         },
+        {
+          id: 'attendance-report',
+          label: 'Báo cáo HS nghỉ học',
+          shortLabel: 'Nghỉ học',
+          icon: UserX,
+        },
       ],
     },
     {
@@ -230,7 +238,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 SỔ CHẤM ĐIỂM
               </h1>
               <p className="text-[11px] text-blue-400 font-medium truncate">
-                Năm học {classConfig.schoolYear || '2025–2026'}
+                Năm học {classConfig.schoolYear || currentSchoolYear()}
               </p>
             </div>
           )}

@@ -309,11 +309,13 @@ export const SummaryZaloExportModal: React.FC<SummaryZaloExportModalProps> = ({
       `---------------------------------`,
       `📊 KẾT QUẢ CHUNG:`,
       `• Sĩ số: ${stats.totalStudents} học sinh`,
-      `• Điểm trung bình cả lớp: ${formatVietnameseNumber(stats.avgScore)}/10.0`,
+      `• Điểm trung bình cả lớp: ${formatVietnameseNumber(stats.avgScore)} điểm`,
       `• Đạt Xuất sắc: ${stats.excellentCount} HS | Đạt Tốt: ${stats.goodCount} HS`,
       stats.fairCount > 0 ? `• Đạt Khá: ${stats.fairCount} HS` : '',
       stats.mediumCount > 0 ? `• Trung bình: ${stats.mediumCount} HS` : '',
       stats.weakCount > 0 ? `• Cần cố gắng: ${stats.weakCount} HS` : '',
+      stats.totalBonus ? `• Tổng điểm thưởng thi đua: +${formatVietnameseNumber(stats.totalBonus)}đ` : '',
+      stats.totalDeduct ? `• Tổng điểm trừ nề nếp: -${formatVietnameseNumber(stats.totalDeduct)}đ` : '',
       stats.totalAchievementBonus
         ? `• Thưởng thành tích: +${formatVietnameseNumber(stats.totalAchievementBonus)}đ`
         : '',
@@ -1069,7 +1071,7 @@ export const SummaryZaloExportModal: React.FC<SummaryZaloExportModalProps> = ({
                                     ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                                     : st.rank === 'Khá'
                                     ? 'bg-blue-100 text-blue-900 border border-blue-200'
-                                    : st.rank === 'Trung bình'
+                                    : st.rank === 'Trung bình' || st.rank === 'Đạt'
                                     ? 'bg-slate-100 text-slate-800 border border-slate-300'
                                     : 'bg-rose-100 text-rose-900 border border-rose-300'
                                 }`}
@@ -1223,7 +1225,7 @@ const MiniStudentRow: React.FC<{ student: ZaloExportStudentRow; index: number }>
               ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
               : student.rank === 'Khá'
               ? 'bg-blue-100 text-blue-900 border border-blue-200'
-              : student.rank === 'Trung bình'
+              : student.rank === 'Trung bình' || student.rank === 'Đạt'
               ? 'bg-slate-100 text-slate-800 border border-slate-300'
               : 'bg-rose-100 text-rose-900 border border-rose-300'
           }`}

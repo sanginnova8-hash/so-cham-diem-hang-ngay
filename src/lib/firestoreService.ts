@@ -8,6 +8,7 @@ import {
   query,
   where,
   serverTimestamp,
+  runTransaction,
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import {
@@ -219,13 +220,38 @@ export async function saveDisciplineLogToCloud(log: DisciplineLog): Promise<void
   }
 }
 
-export async function deleteDisciplineLogFromCloud(logId: string): Promise<void> {
+export async function deleteDisciplineLogFromCloud(logId: string, deletedLog?: DisciplineLog, editorName?: string): Promise<void> {
   const path = `disciplineLogs/${logId}`;
   try {
-    await deleteDoc(doc(db, 'disciplineLogs', logId));
+    await runTransaction(db, async batch => {
+      const live = await batch.get(doc(db, 'disciplineLogs', logId));
+      if (!live.exists()) throw new Error('Bản ghi đã bị xóa.');
+      const archivedLog = live.data() as DisciplineLog;
+      batch.delete(doc(db, 'disciplineLogs', logId));
+      if (auth.currentUser) batch.set(doc(db, 'disciplineTrash', logId), {
+        teacherId: archivedLog.teacherId, classId: archivedLog.classId, log: archivedLog,
+        deletedAt: new Date().toISOString(), deletedBy: editorName || 'GVCN',
+      });
+      if (auth.currentUser) batch.set(doc(collection(db, 'auditLogs')), {
+        schoolId: 'school_cdnghe01_bqp', actorId: auth.currentUser.uid, actorName: editorName || 'GVCN', action: 'DELETE_DISCIPLINE_LOG', entityType: 'DisciplineLog', entityId: logId,
+        classId: archivedLog.classId, teacherId: archivedLog.teacherId, before: JSON.parse(JSON.stringify(archivedLog)), createdAt: new Date().toISOString(),
+      });
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
+}
+
+export async function restoreDisciplineLogFromCloud(log: DisciplineLog) {
+  await runTransaction(db, async batch => {
+    const trashRef = doc(db, 'disciplineTrash', log.id);
+    const liveRef = doc(db, 'disciplineLogs', log.id);
+    const trash = await batch.get(trashRef);
+    if (!trash.exists()) throw new Error('Bản ghi đã được khôi phục hoặc không còn trong thùng rác.');
+    const original = trash.data().log as DisciplineLog;
+    batch.set(liveRef, { ...original, createdBy: log.createdBy, updatedAt: log.updatedAt, history: [...(original.history || []), ...(log.history || []).slice(-1)] });
+    batch.delete(trashRef);
+  });
 }
 
 export async function getDisciplineLogsFromCloud(teacherId: string, classId?: string): Promise<DisciplineLog[]> {
@@ -283,6 +309,9 @@ export async function savePeriodLockToCloud(lock: PeriodLockStatus): Promise<voi
         lockedAt: lock.lockedAt || new Date().toISOString(),
         lockedBy: lock.lockedBy || 'Quản trị viên',
         reason: lock.reason || '',
+        ...(lock.scoreVersion ? { scoreVersion: lock.scoreVersion } : {}),
+        ...(lock.scores ? { scores: lock.scores } : {}),
+        ...(lock.monthlyScores ? { monthlyScores: lock.monthlyScores } : {}),
         updatedAt: serverTimestamp(),
       },
       { merge: true }

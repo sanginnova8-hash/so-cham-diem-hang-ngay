@@ -36,6 +36,7 @@ const TAB_LABELS: Record<TabType, { section: string; title: string }> = {
   weekly: { section: 'Báo cáo', title: 'Tổng kết tuần' },
   monthly: { section: 'Báo cáo', title: 'Tổng kết tháng' },
   semester: { section: 'Báo cáo', title: 'Xếp loại học kỳ' },
+  'attendance-report': { section: 'Báo cáo', title: 'Báo cáo học sinh nghỉ học' },
   students: { section: 'Học sinh', title: 'Danh sách hồ sơ học sinh' },
   'zalo-composer': { section: 'Học sinh', title: 'Soạn tin Zalo phụ huynh' },
   'parent-report': { section: 'Học sinh', title: 'Báo cáo phụ huynh định kỳ' },

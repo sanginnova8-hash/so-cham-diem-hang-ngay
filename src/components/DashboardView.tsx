@@ -19,7 +19,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { formatVietnameseDate, formatVietnameseNumber, getRankBadgeClass } from '../lib/utils';
+import { formatVietnameseDate, formatVietnameseNumber, getRankBadgeClass, getRankRangeDescription } from '../lib/utils';
 import { TabType } from './Navbar';
 import { ClassMonitorManagementCard } from './v2/ClassMonitorManagementCard';
 import { CreateClassMonitorModal } from './v2/CreateClassMonitorModal';
@@ -95,8 +95,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       'Xuất sắc': activeData.filter((d) => d.rank === 'Xuất sắc').length,
       'Tốt': activeData.filter((d) => d.rank === 'Tốt').length,
       'Khá': activeData.filter((d) => d.rank === 'Khá').length,
-      'Trung bình': activeData.filter((d) => d.rank === 'Trung bình').length,
-      'Yếu': activeData.filter((d) => d.rank === 'Yếu').length,
+      'Đạt': activeData.filter((d) => d.rank === 'Đạt' || d.rank === 'Trung bình').length,
+      'Không đạt': activeData.filter((d) => d.rank === 'Không đạt' || d.rank === 'Yếu').length,
+      'Trung bình': activeData.filter((d) => d.rank === 'Đạt' || d.rank === 'Trung bình').length,
+      'Yếu': activeData.filter((d) => d.rank === 'Không đạt' || d.rank === 'Yếu').length,
     };
 
     return {
@@ -381,11 +383,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="space-y-3.5">
             {[
-              { label: 'Xuất sắc (9.0 - 10)', key: 'Xuất sắc', color: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-400' },
-              { label: 'Tốt (8.0 - 8.9)', key: 'Tốt', color: 'bg-blue-500', text: 'text-blue-700 dark:text-blue-400' },
-              { label: 'Khá (7.0 - 7.9)', key: 'Khá', color: 'bg-amber-500', text: 'text-amber-700 dark:text-amber-400' },
-              { label: 'Trung bình (5.0 - 6.9)', key: 'Trung bình', color: 'bg-orange-500', text: 'text-orange-700 dark:text-orange-400' },
-              { label: 'Yếu (< 5.0)', key: 'Yếu', color: 'bg-rose-500', text: 'text-rose-700 dark:text-rose-400' },
+              { label: `Xuất sắc (${getRankRangeDescription('Xuất sắc', classConfig.rankThresholds)})`, key: 'Xuất sắc', color: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-400' },
+              { label: `Tốt (${getRankRangeDescription('Tốt', classConfig.rankThresholds)})`, key: 'Tốt', color: 'bg-blue-500', text: 'text-blue-700 dark:text-blue-400' },
+              { label: `Khá (${getRankRangeDescription('Khá', classConfig.rankThresholds)})`, key: 'Khá', color: 'bg-amber-500', text: 'text-amber-700 dark:text-amber-400' },
+              { label: `Đạt (${getRankRangeDescription('Đạt', classConfig.rankThresholds)})`, key: 'Đạt', color: 'bg-orange-500', text: 'text-orange-700 dark:text-orange-400' },
+              { label: `Không đạt (${getRankRangeDescription('Không đạt', classConfig.rankThresholds)})`, key: 'Không đạt', color: 'bg-rose-500', text: 'text-rose-700 dark:text-rose-400' },
             ].map((r) => {
               const count = stats.ranks[r.key as keyof typeof stats.ranks] || 0;
               const percent = activeData.length > 0 ? Math.round((count / activeData.length) * 100) : 0;
@@ -410,7 +412,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-xs">
             <span className="text-slate-500">Quy tắc tính điểm:</span>
-            <span className="text-slate-700 dark:text-slate-300 font-medium">10 - Điểm trừ + Điểm cộng (0..10)</span>
+            <span className="text-slate-700 dark:text-slate-300 font-medium">10 - Điểm trừ + Điểm cộng (≥ {classConfig.minScore}đ)</span>
           </div>
         </div>
 

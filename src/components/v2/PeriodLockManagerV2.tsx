@@ -22,6 +22,7 @@ import { PeriodLockStatus } from '../../types';
 import { formatVietnameseDate, exportToExcel } from '../../lib/utils';
 import { UnlockPeriodModalV2 } from './UnlockPeriodModalV2';
 import { auditService } from '../../services/auditService';
+import { localDateString } from '../../lib/logValidation';
 
 interface PeriodLockManagerV2Props {
   onRefresh?: () => void;
@@ -88,23 +89,13 @@ export const PeriodLockManagerV2: React.FC<PeriodLockManagerV2Props> = () => {
 
   // Months list (Tháng 9 -> Tháng 5)
   const allMonths = useMemo(() => {
-    return [
-      { monthNumber: 9, title: 'Tháng 9/2025', semester: 'HK1' },
-      { monthNumber: 10, title: 'Tháng 10/2025', semester: 'HK1' },
-      { monthNumber: 11, title: 'Tháng 11/2025', semester: 'HK1' },
-      { monthNumber: 12, title: 'Tháng 12/2025', semester: 'HK1' },
-      { monthNumber: 1, title: 'Tháng 1/2026', semester: 'HK1 / HK2' },
-      { monthNumber: 2, title: 'Tháng 2/2026', semester: 'HK2' },
-      { monthNumber: 3, title: 'Tháng 3/2026', semester: 'HK2' },
-      { monthNumber: 4, title: 'Tháng 4/2026', semester: 'HK2' },
-      { monthNumber: 5, title: 'Tháng 5/2026', semester: 'HK2' },
-    ];
-  }, []);
+    return classConfig.months.map(monthNumber => ({ monthNumber, title: `Tháng ${monthNumber} • ${classConfig.schoolYear}`, semester: classConfig.semester1Months.includes(monthNumber) ? 'HK1' : 'HK2' }));
+  }, [classConfig]);
 
   // Semesters list
   const allSemesters = [
-    { semesterNumber: 1, title: 'Học Kỳ 1 (Năm học 2025 - 2026)', weeksRange: 'Tuần 1 - Tuần 18' },
-    { semesterNumber: 2, title: 'Học Kỳ 2 (Năm học 2025 - 2026)', weeksRange: 'Tuần 19 - Tuần 35' },
+    { semesterNumber: 1, title: `Học Kỳ 1 (${classConfig.schoolYear})`, weeksRange: 'Các tuần học kỳ 1' },
+    { semesterNumber: 2, title: `Học Kỳ 2 (${classConfig.schoolYear})`, weeksRange: 'Các tuần học kỳ 2' },
   ];
 
   // Helper to find existing lock details
@@ -119,7 +110,7 @@ export const PeriodLockManagerV2: React.FC<PeriodLockManagerV2Props> = () => {
     defaultReason?: string
   ) => {
     const reason = defaultReason || `Khóa sổ ${periodType === 'week' ? `Tuần ${periodValue}` : periodType === 'month' ? `Tháng ${periodValue}` : `Học kỳ ${periodValue}`} sau khi Hội đồng bình xét thi đua`;
-    toggleLockPeriod(periodType, periodValue, reason);
+    if (!await toggleLockPeriod(periodType, periodValue, reason)) return;
     // Audit log
     await auditService.log({
       schoolId: 'school_cdnghe01_bqp',
@@ -138,7 +129,7 @@ export const PeriodLockManagerV2: React.FC<PeriodLockManagerV2Props> = () => {
   const handleConfirmUnlock = async (unlockReason: string) => {
     if (!unlockTarget) return;
     const { periodType, periodValue } = unlockTarget;
-    toggleLockPeriod(periodType, periodValue, unlockReason);
+    if (!await toggleLockPeriod(periodType, periodValue, unlockReason)) return;
     // Audit log
     await auditService.log({
       schoolId: 'school_cdnghe01_bqp',
@@ -155,18 +146,15 @@ export const PeriodLockManagerV2: React.FC<PeriodLockManagerV2Props> = () => {
   };
 
   // Batch lock past weeks
-  const handleBatchLockPastWeeks = () => {
-    const currentWeekNum = 2; // e.g. current week
-    const toLock = allWeeks.filter((w) => w.weekNumber <= currentWeekNum && !isPeriodLocked('week', w.weekNumber));
+  const handleBatchLockPastWeeks = async () => {
+    const toLock = allWeeks.filter((w) => w.endDate < localDateString() && !isPeriodLocked('week', w.weekNumber));
+    const currentWeekNum = Math.max(0, ...toLock.map(w => w.weekNumber));
     if (toLock.length === 0) {
       alert('Tất cả các tuần đã qua đều đã được khóa sổ.');
       return;
     }
     if (confirm(`Bạn có chắc muốn khóa nhanh ${toLock.length} tuần học đã qua (từ Tuần 1 đến Tuần ${currentWeekNum})?`)) {
-      toLock.forEach((w) => {
-        handleLock('week', w.weekNumber, `Khóa sổ định kỳ theo lịch Ban Giám Hiệu (Tuần ${w.weekNumber})`);
-      });
-      alert(`Đã khóa thành công ${toLock.length} tuần học!`);
+      for (const w of toLock) await handleLock('week', w.weekNumber, `Khóa sổ định kỳ theo lịch Ban Giám Hiệu (Tuần ${w.weekNumber})`);
     }
   };
 

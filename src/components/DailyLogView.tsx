@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { FamilyManagement } from './FamilyManagement';
 import {
   Search,
   Filter,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { DisciplineLog, BehaviorCategory, Student, BehaviorType } from '../types';
+import { targetDateForMovedWeek } from '../lib/weeklyPeriod';
 import { ImportDisciplineLogsModal } from './ImportDisciplineLogsModal';
 import { DailyLogModalV2 } from './v2/DailyLogModalV2';
 import {
@@ -30,6 +32,13 @@ import {
   compareVietnameseNames,
   compareStudentCodes,
 } from '../lib/utils';
+import {
+  MORNING_PERIODS,
+  AFTERNOON_PERIODS,
+  ALL_SCHOOL_PERIODS,
+  getPeriodSession,
+  getPeriodBadgeInfo,
+} from '../lib/schoolPeriods';
 
 interface DailyLogViewProps {
   isModalOpen: boolean;
@@ -58,6 +67,7 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMonth, setFilterMonth] = useState<number | 'all'>('all');
   const [filterWeek, setFilterWeek] = useState<number | 'all'>('all');
+  const [filterSession, setFilterSession] = useState<'all' | 'morning' | 'afternoon'>('all');
   const [filterType, setFilterType] = useState<'all' | BehaviorType>('all');
   const [filterStudentId, setFilterStudentId] = useState<string>('all');
 
@@ -82,6 +92,12 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
       if (filterType !== 'all' && log.type !== filterType) return false;
       // Student filter
       if (filterStudentId !== 'all' && log.studentId !== filterStudentId) return false;
+
+      // Session filter (Sáng 5 tiết / Chiều 5 tiết)
+      if (filterSession !== 'all') {
+        const session = getPeriodSession(log.periodOrTime);
+        if (session !== filterSession) return false;
+      }
 
       // Text search
       if (searchTerm) {
@@ -157,6 +173,7 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
 
   return (
     <div className="space-y-5">
+      <FamilyManagement />
       {/* Header Bar */}
       <div className="bg-white dark:bg-slate-800 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -210,7 +227,7 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
 
       {/* Filter & Search Bar */}
       <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
           {/* Search Input */}
           <div className="relative lg:col-span-2">
             <Search className="h-4 w-4 text-slate-400 absolute left-3 top-2.5" />
@@ -252,6 +269,19 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
                   Tuần {w.weekNumber} (T{w.month})
                 </option>
               ))}
+            </select>
+          </div>
+
+          {/* Session Filter (Sáng 5 tiết • Chiều 5 tiết) */}
+          <div>
+            <select
+              value={filterSession}
+              onChange={(e) => setFilterSession(e.target.value as any)}
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">Cả 2 buổi (Sáng & Chiều)</option>
+              <option value="morning">☀️ Buổi Sáng (5 tiết)</option>
+              <option value="afternoon">🌤️ Buổi Chiều (5 tiết)</option>
             </select>
           </div>
 
@@ -396,8 +426,18 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
                           {formatVietnameseNumber(log.totalScore)}đ
                         </span>
                       </td>
-                      <td className="py-3 px-3 whitespace-nowrap text-slate-600 dark:text-slate-400">
-                        {log.periodOrTime || '—'}
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        {(() => {
+                          const badge = getPeriodBadgeInfo(log.periodOrTime);
+                          if (!log.periodOrTime) return <span className="text-slate-400">—</span>;
+                          return (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-medium text-[11px] ${badge.badgeClass}`}>
+                              {badge.sessionText === 'Sáng' && <span className="text-[10px]">☀️</span>}
+                              {badge.sessionText === 'Chiều' && <span className="text-[10px]">🌤️</span>}
+                              <span>{badge.label}</span>
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="py-3 px-3 text-slate-600 dark:text-slate-400 max-w-[180px]">
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -467,7 +507,9 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
 
       {/* MODAL: Chỉnh sửa bản ghi */}
       {editingLog && (() => {
-        const isEditLocked = isPeriodLocked('week', editingLog.weekNumber);
+        const targetWeek = classConfig.weeks.find((w) => w.startDate <= editingLog.date && editingLog.date <= w.endDate);
+        const targetWeekNumber = targetWeek?.weekNumber ?? editingLog.weekNumber;
+        const isEditLocked = isPeriodLocked('week', editingLog.weekNumber) || isPeriodLocked('week', targetWeekNumber);
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
             <div className="mobile-dialog-panel bg-white dark:bg-slate-800 rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700">
@@ -477,17 +519,111 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
               </h3>
               <p className="text-xs text-slate-500 mb-4">
                 Học sinh: <strong className="text-slate-800 dark:text-slate-200">{editingLog.studentName}</strong> (
-                {editingLog.studentCode}) • Ngày: {formatVietnameseDate(editingLog.date)} (Tuần {editingLog.weekNumber})
+                {editingLog.studentCode}) • Ngày: {formatVietnameseDate(editingLog.date)} (Tuần {targetWeekNumber})
               </p>
 
               {isEditLocked && (
                 <div className="p-3 mb-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500" />
-                  <span>Tuần {editingLog.weekNumber} đã được Ban Giám Hiệu khóa thi đua. Không thể chỉnh sửa bản ghi này.</span>
+                  <span>Tuần {targetWeekNumber} đã được Ban Giám Hiệu khóa thi đua. Không thể chỉnh sửa bản ghi này.</span>
                 </div>
               )}
 
               <div className="space-y-3.5 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold mb-1">
+                      {editingLog.type === 'deduct' ? 'Ngày vi phạm' : 'Ngày ghi nhận'}
+                    </label>
+                    <input
+                      type="date"
+                      disabled={isEditLocked}
+                      value={editingLog.date}
+                      onChange={(e) => setEditingLog({ ...editingLog, date: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl disabled:opacity-60"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">
+                      Tuần áp dụng (Chuyển tuần)
+                    </label>
+                    <select
+                      disabled={isEditLocked}
+                      value={targetWeekNumber}
+                      onChange={(e) => {
+                        const newW = Number(e.target.value);
+                        const targetW = classConfig.weeks.find((w) => w.weekNumber === newW);
+                        if (targetW) {
+                          const newDate = targetDateForMovedWeek(editingLog.date, targetW);
+                          setEditingLog({ ...editingLog, date: newDate, weekNumber: newW });
+                        }
+                      }}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl disabled:opacity-60 font-medium"
+                    >
+                      {classConfig.weeks.map((w) => (
+                        <option key={w.weekNumber} value={w.weekNumber} disabled={isPeriodLocked('week', w.weekNumber)}>
+                          Tuần {w.weekNumber} (Tháng {w.month}){isPeriodLocked('week', w.weekNumber) ? ' [Đã khóa]' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-semibold">Tiết / Thời điểm</label>
+                    <span className="text-[10px] text-slate-400">2 buổi • 5 tiết/buổi</span>
+                  </div>
+                  <input
+                    type="text"
+                    list="edit-school-periods-list"
+                    disabled={isEditLocked}
+                    value={editingLog.periodOrTime || ''}
+                    onChange={(e) => setEditingLog({ ...editingLog, periodOrTime: e.target.value })}
+                    placeholder="VD: Tiết 1, Tiết 6 (Tiết 1 Chiều)..."
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-xl disabled:opacity-60"
+                  />
+                  <datalist id="edit-school-periods-list">
+                    {ALL_SCHOOL_PERIODS.map((p) => (
+                      <option key={p.value} value={p.value} />
+                    ))}
+                  </datalist>
+
+                  {/* Quick Select Buttons */}
+                  <div className="flex flex-wrap items-center gap-1 mt-1.5 text-[10px]">
+                    <span className="font-semibold text-amber-600 dark:text-amber-400">☀️ Sáng:</span>
+                    {MORNING_PERIODS.slice(0, 5).map((p) => (
+                      <button
+                        key={p.value}
+                        type="button"
+                        onClick={() => setEditingLog({ ...editingLog, periodOrTime: p.value })}
+                        className={`px-1.5 py-0.5 rounded border transition ${
+                          editingLog.periodOrTime === p.value
+                            ? 'bg-amber-500 text-white border-amber-500'
+                            : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        {p.shortLabel}
+                      </button>
+                    ))}
+                    <span className="font-semibold text-sky-600 dark:text-sky-400 ml-1">🌤️ Chiều:</span>
+                    {AFTERNOON_PERIODS.slice(0, 5).map((p) => (
+                      <button
+                        key={p.value}
+                        type="button"
+                        onClick={() => setEditingLog({ ...editingLog, periodOrTime: p.value })}
+                        className={`px-1.5 py-0.5 rounded border transition ${
+                          editingLog.periodOrTime === p.value
+                            ? 'bg-sky-500 text-white border-sky-500'
+                            : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 hover:bg-sky-50 dark:hover:bg-sky-950/40 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        {p.shortLabel}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div>
                   <label className="block font-semibold mb-1">Mô tả hành vi</label>
                   <input
@@ -549,7 +685,7 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setEditingLog(null)}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-200"
                 >
                   Đóng
                 </button>
@@ -561,9 +697,12 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
                     await updateDisciplineLog(
                       editingLog.id,
                       {
+                        date: editingLog.date,
+                        weekNumber: editingLog.weekNumber,
                         behaviorDescription: editingLog.behaviorDescription,
                         scorePerUnit: editingLog.scorePerUnit,
                         count: editingLog.count,
+                        periodOrTime: editingLog.periodOrTime,
                         note: editingLog.note,
                       },
                       classConfig.homeroomTeacher

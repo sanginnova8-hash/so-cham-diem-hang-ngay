@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { currentSchoolYear } from '../lib/classScope';
 import {
   LogIn,
   X,
@@ -221,7 +222,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onNavig
                   Lớp đang làm việc
                 </span>
                 <span className="text-[10px] text-slate-500 font-mono">
-                  {classConfig.schoolYear || '2025–2026'}
+                  {classConfig.schoolYear || currentSchoolYear()}
                 </span>
               </div>
               <p className="text-sm font-black text-slate-900 dark:text-white">

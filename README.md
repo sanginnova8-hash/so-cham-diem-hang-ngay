@@ -27,6 +27,10 @@ npm run dev
 
 ## Kiểm tra và triển khai
 
+Điểm tháng mới lấy trung bình điểm các tuần đã kết thúc/đã chốt theo lịch lớp, cộng thưởng riêng tháng và giới hạn theo thang điểm lớp. Thưởng tháng không cộng vào tuần. Có thể chọn tháng bắt đầu áp dụng trong bảng tổng kết tháng; các kỳ đã khóa trước nâng cấp giữ công thức cũ. Khi chốt kỳ mới, điểm tổng kết được lưu cố định cùng bản khóa. Điểm học kỳ sử dụng kết quả tháng.
+
+Bấm điểm tổng kết để xem cách tính; bấm số lỗi/điểm trừ để sửa hoặc xóa bản ghi. Hoàn tác xóa khả dụng trong cửa sổ sửa điểm đang mở; lịch sử xóa được ghi vào audit cùng thao tác xóa. Trùng học sinh, ngày, tiết và hành vi cụ thể bị chặn, kể cả ghi hàng loạt. Chạy `npm run test:scoring` để kiểm tra các tình huống tính điểm.
+
 Kiểm thử rules yêu cầu Java 21. Emulator dùng project giả lập `demo-so-cham-diem`, không dùng database thật.
 
 ```sh
@@ -46,10 +50,14 @@ GitHub Actions xác thực bằng Workload Identity Federation, **không cần l
 
 ## Dữ liệu và quản trị
 
+Giáo viên mở mục “Tra cứu phụ huynh • Đề nghị điều chỉnh • Thùng rác” trong Nhật ký hoặc Báo cáo phụ huynh để cấp báo cáo riêng cho email Google, thời hạn 1–30 ngày. Người nhận mở link và đăng nhập đúng email đã được cấp; không cần tài khoản giáo viên và không được đọc danh sách lớp. Báo cáo là bản công bố: giáo viên bấm Cập nhật báo cáo sau khi sửa điểm; có thể thu hồi link ngay. Đề nghị điều chỉnh có trạng thái chờ duyệt/đã duyệt/từ chối, phản hồi của giáo viên; duyệt nội dung sửa được ghi cùng trạng thái bằng một batch. Sửa điểm/số lần qua cửa sổ Sửa bản ghi.
+
+Xóa nhật ký đưa bản gốc vào `disciplineTrash` trong cùng giao dịch, lưu người xóa/thời gian và audit. Thùng rác được đồng bộ theo lớp, khôi phục sau khi đăng nhập lại; không có thao tác xóa vĩnh viễn. Khôi phục giữ bản gốc, thêm lịch sử và vẫn tuân thủ khóa tuần/tháng/học kỳ. Chỉ các bản ghi xóa từ bản cập nhật này có bản lưu trong thùng rác. Mã tra cứu/tên/số điện thoại cũ không còn là cơ chế tra cứu công khai.
+
 Các collection hiện tại được giữ nguyên: `users`, `classes`, `classConfigs`, `students`, `behaviorCategories`, `disciplineLogs`, `periodLocks`. Dữ liệu lớp gắn với `teacherId` bằng Firebase Auth UID. Hồ sơ lớp trưởng có `teacherId` trỏ tới giáo viên của mình. Giáo viên có thể tạo nhiều lớp/niên khóa với sổ riêng theo classConfig ID. Xem CLASS_WORKSPACES.md. Dữ liệu cũ được giữ nguyên; mô hình nhiều trường và nhiều giáo viên đồng quản lý một lớp chưa được bổ sung.
 
 Quản trị viên đầu tiên được cấp qua Firebase Console/Admin API: tạo hoặc đăng nhập tài khoản Auth, lấy UID và đặt `users/{UID}.role` thành `admin` hoặc `owner`, `isActive` thành `true`. Thao tác này chỉ dành cho người có quyền quản trị Firebase project. Không dùng tên email để tự cấp quyền trong trình duyệt.
 
 Bản sao lưu JSON được nhập theo cách bổ sung: ID học sinh/danh mục/nhật ký được gắn tiền tố UID người nhận, tham chiếu học sinh được đổi tương ứng. Có thể thử lại cùng tệp nếu kết nối gián đoạn; ứng dụng không tự xóa dữ liệu đã có. Dữ liệu project cũ chưa được chuyển sang project mới.
 
-Tra cứu phụ huynh công khai và hệ thống phân cấp v2 chưa được triển khai cho dữ liệu thật. Collection riêng tư không cho khách truy cập; cần xây luồng chia sẻ báo cáo có token và phạm vi riêng trước khi dùng tra cứu công khai. Cách thu hồi tài khoản hiện tại là khóa hồ sơ, giữ lịch sử lớp và UID để không cho tài khoản tự tạo lại hồ sơ nhằm vượt qua khóa.
+Tra cứu phụ huynh dùng báo cáo riêng `familyReports` có thời hạn, gắn với email Google đã xác minh; khách không được đọc collection lớp. Đề nghị điều chỉnh lưu tại `correctionRequests`, giáo viên duyệt; `disciplineTrash` lưu bản ghi đã xóa. Cách thu hồi tài khoản giáo viên là khóa hồ sơ, giữ lịch sử lớp và UID để không cho tài khoản tự tạo lại hồ sơ nhằm vượt qua khóa. Hệ thống phân cấp v2 mở rộng chưa được triển khai cho dữ liệu thật.

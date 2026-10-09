@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { FamilyManagement } from './FamilyManagement';
 import { currentSchoolWeek, type ReportPeriodSelection } from '../lib/weeklyPeriod';
 import {
   MessageSquareShare,
@@ -142,6 +143,9 @@ export const ParentReportView: React.FC<ParentReportViewProps> = ({
         finalScore: semItem.averageScore,
         rank: semItem.finalRank,
         violationCount: semItem.totalViolations,
+        excusedAbsenceCount: 0,
+        unexcusedAbsenceCount: 0,
+        truancyCount: 0,
         status: 'active' as const,
         bonusCount: 0,
         notes: '',
@@ -174,6 +178,9 @@ export const ParentReportView: React.FC<ParentReportViewProps> = ({
             finalScore: s.averageScore,
             rank: s.finalRank,
             violationCount: s.totalViolations,
+            excusedAbsenceCount: 0,
+            unexcusedAbsenceCount: 0,
+            truancyCount: 0,
             status: 'active' as const,
             bonusCount: 0,
             notes: '',
@@ -239,7 +246,7 @@ export const ParentReportView: React.FC<ParentReportViewProps> = ({
 
     const contentLines: string[] = [];
 
-    const teacherName = classConfig.homeroomTeacher || 'Giáo viên chủ nhiệm';
+    const teacherName = classConfig.homeroomTeacher || 'Nguyễn Văn Sang';
     const school = classConfig.schoolName || 'Trường Cao đẳng nghề 01 - BQP';
     const teacherPhone = classConfig.teacherPhone ? ` • SĐT: ${classConfig.teacherPhone}` : '';
 
@@ -249,7 +256,7 @@ export const ParentReportView: React.FC<ParentReportViewProps> = ({
       `Thầy/Cô ${teacherName} - Giáo viên chủ nhiệm lớp ${classConfig.className}, ${school} xin gửi tới Quý gia đình thông tin rèn luyện nề nếp của em ${currentStudent.fullName} (Mã HS: ${currentStudent.studentCode}) trong ${periodText}:`
     );
     contentLines.push('');
-    contentLines.push(`• Điểm rèn luyện đạt được: ${score} / 10,0 điểm`);
+    contentLines.push(`• Điểm rèn luyện đạt được: ${score} điểm (Thang chuẩn: 10đ)`);
     contentLines.push(`• Xếp loại thi đua: ${rank}`);
 
     if (periodSummary.totalDeduct > 0) {
@@ -268,15 +275,8 @@ export const ParentReportView: React.FC<ParentReportViewProps> = ({
       });
     }
 
-    // Portal link & Parent Token
-    if (currentStudent.parentLookupToken) {
-      const portalUrl = typeof window !== 'undefined'
-        ? `${window.location.origin}/?token=${currentStudent.parentLookupToken}`
-        : `/?token=${currentStudent.parentLookupToken}`;
-      contentLines.push('');
-      contentLines.push(`• Mã tra cứu bí mật của con: ${currentStudent.parentLookupToken}`);
-      contentLines.push(`• Link tra cứu trực tuyến 1-chạm: ${portalUrl}`);
-    }
+    contentLines.push('');
+    contentLines.push('• Để tra cứu trực tuyến, sử dụng liên kết báo cáo được giáo viên cấp riêng cho email Google của gia đình.');
 
     // Positive and cooperative closing statement
     contentLines.push('');
@@ -346,6 +346,7 @@ export const ParentReportView: React.FC<ParentReportViewProps> = ({
 
   return (
     <div className="space-y-5">
+      <FamilyManagement />
       {/* Header */}
       <div className="bg-white dark:bg-slate-800 p-4 sm:p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -731,7 +732,7 @@ export const ParentReportView: React.FC<ParentReportViewProps> = ({
                 <span>Nội dung khuyến khích sự đồng hành tích cực giữa gia đình và nhà trường</span>
               </span>
               <span>
-                Mã tra cứu: <strong className="font-mono text-indigo-600 dark:text-indigo-400">{currentStudent?.parentLookupToken || 'Chưa cấp'}</strong>
+                Tra cứu bằng liên kết riêng và email được cấp quyền
               </span>
             </div>
           </div>

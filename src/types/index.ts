@@ -2,7 +2,7 @@ export type BehaviorType = 'deduct' | 'bonus';
 
 export type StudentStatus = 'active' | 'inactive';
 
-export type RankLevel = 'Xuất sắc' | 'Tốt' | 'Khá' | 'Trung bình' | 'Yếu';
+export type RankLevel = 'Xuất sắc' | 'Tốt' | 'Khá' | 'Đạt' | 'Không đạt' | 'Trung bình' | 'Yếu';
 
 export type UserRole = 'guest' | 'teacher' | 'admin' | 'owner' | 'monitor';
 
@@ -46,6 +46,9 @@ export interface SchoolClass {
 }
 
 export interface PeriodLockStatus {
+  scoreVersion?: 2;
+  scores?: Record<string, number>;
+  monthlyScores?: Record<string, Record<string, number>>;
   classId?: string;
   periodType: 'week' | 'month' | 'semester';
   periodValue: number; // weekNumber (1-35) or month (1-12) or semester (1-2)
@@ -151,7 +154,17 @@ export interface SchoolWeek {
   title: string;
 }
 
+export interface RankThresholds {
+  xuatSac: number; // Mặc định 12 (Từ 12đ trở lên)
+  tot: number;     // Mặc định 8 (Từ 8đ đến dưới xuatSac)
+  kha: number;     // Mặc định 7 (Từ 7đ đến dưới tot)
+  dat: number;     // Mặc định 5 (Từ 5đ đến dưới kha)
+  xuatSacNote?: string; // Mặc định 'Bốc thăm phần thưởng'
+  khongDatNote?: string; // Mặc định 'Bốc thăm hình phạt'
+}
+
 export interface ClassConfig {
+  monthlyAverageFromMonth?: number;
   scopeVersion?: 2;
   classDirectoryId?: string;
   id: string;
@@ -160,12 +173,13 @@ export interface ClassConfig {
   homeroomTeacher: string;
   baseScore: number; // 10
   minScore: number; // 0
-  maxScore: number; // 10
+  maxScore: number; // Điểm trần tối đa (mặc định 100, cho phép > 10)
   months: number[]; // [9, 10, 11, 12, 1, 2, 3, 4, 5]
   semester1Months: number[]; // [9, 10, 11, 12, 1]
   semester2Months: number[]; // [2, 3, 4, 5]
   weeks: SchoolWeek[];
   achievementBonusRules?: AchievementBonusRule[];
+  rankThresholds?: RankThresholds; // Tiêu chuẩn ngưỡng điểm xếp loại rèn luyện thi đua
   teacherId: string;
   updatedAt: string;
 
@@ -185,6 +199,11 @@ export interface ClassConfig {
   academicVicePresident?: string; // Lớp phó học tập
   disciplineVicePresident?: string; // Lớp phó nề nếp / kỷ luật
   youthUnionSecretary?: string; // Bí thư chi đoàn
+
+  // Quy chuẩn thời khóa biểu (2 buổi/ngày, mỗi buổi 5 tiết)
+  dailySessions?: number; // Mặc định 2 (Sáng & Chiều)
+  periodsPerSession?: number; // Mặc định 5 (5 tiết/buổi)
+  totalPeriodsPerDay?: number; // Mặc định 10 (10 tiết/ngày)
 }
 
 export interface StudentWeeklySummary {
@@ -197,6 +216,9 @@ export interface StudentWeeklySummary {
   bonusCount: number;
   totalDeduct: number;
   totalBonus: number;
+  excusedAbsenceCount: number;   // Số buổi nghỉ có phép (P)
+  unexcusedAbsenceCount: number; // Số buổi nghỉ không phép (KP)
+  truancyCount: number;          // Số lần bỏ tiết / trốn tiết (BT)
   achievementBonus?: number;
   achievementCount?: number;
   achievements?: string[];
@@ -206,6 +228,8 @@ export interface StudentWeeklySummary {
 }
 
 export interface StudentMonthlySummary {
+  monthlyBonus?: number;
+  weeklyBonus?: number;
   studentId: string;
   studentCode: string;
   fullName: string;
@@ -213,6 +237,9 @@ export interface StudentMonthlySummary {
   weekDeductions: Record<number, number>; // weekNumber -> deduct amount
   totalDeduct: number;
   totalBonus: number;
+  excusedAbsenceCount: number;   // Số buổi nghỉ có phép (P)
+  unexcusedAbsenceCount: number; // Số buổi nghỉ không phép (KP)
+  truancyCount: number;          // Số lần bỏ tiết / trốn tiết (BT)
   achievementBonus?: number;
   achievementCount?: number;
   achievements?: string[];
@@ -234,4 +261,7 @@ export interface StudentSemesterSummary {
   totalViolations: number;
   totalDeduct: number;
   totalBonus: number;
+  excusedAbsenceCount: number;   // Số buổi nghỉ có phép (P)
+  unexcusedAbsenceCount: number; // Số buổi nghỉ không phép (KP)
+  truancyCount: number;          // Số lần bỏ tiết / trốn tiết (BT)
 }

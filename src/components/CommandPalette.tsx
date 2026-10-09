@@ -14,6 +14,7 @@ import {
   User,
   X,
   RefreshCw,
+  UserX,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { TabType } from './Navbar';
@@ -134,6 +135,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       run: () => {
         onClose();
         onNavigateTab('monthly');
+      },
+    },
+    {
+      id: 'attendance-report',
+      title: 'Báo cáo danh sách học sinh nghỉ học',
+      subtitle: 'Chi tiết số buổi nghỉ có phép, không phép, trốn tiết',
+      icon: UserX,
+      color: 'text-rose-500',
+      run: () => {
+        onClose();
+        onNavigateTab('attendance-report');
       },
     },
     {

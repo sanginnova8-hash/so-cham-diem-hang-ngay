@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "test:scoring": "node --test tests/scoring.test.mjs",
     "test:rules": "firebase emulators:exec --only firestore --project demo-so-cham-diem --config firebase.emulators.json \"node --test tests/firestore.rules.test.mjs\"",
     "test:backup": "tsx --test tests/scopedBackup.test.ts"
   },

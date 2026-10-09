@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { currentSchoolYear } from '../lib/classScope';
 import { defaultWeekOneStart } from '../lib/classScope';
 import {
   ShieldCheck,
@@ -361,7 +362,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                 </button>
 
                 <div className="text-xs font-semibold text-slate-500 hidden md:block">
-                  Năm học: 2025 - 2026
+                  Năm học: {currentSchoolYear()}
                 </div>
               </div>
             </div>
