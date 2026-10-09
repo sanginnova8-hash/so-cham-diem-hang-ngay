@@ -159,30 +159,11 @@ export const ConductSheetTable: React.FC<ConductSheetTableProps> = ({
           </div>
         </div>
 
-        {/* PRINT ADMINISTRATIVE HEADER (ONLY VISIBLE ON PRINT) */}
+        {/* PRINT TITLE (MATCHING PHOTO) */}
         <div className="hidden print:block mb-4 text-center">
-          <div className="grid grid-cols-2 text-xs mb-3 pb-3 border-b border-black">
-            <div>
-              <p className="uppercase text-[10px]">BỘ QUỐC PHÒNG</p>
-              <p className="font-bold uppercase text-[11px]">TRƯỜNG CAO ĐẲNG NGHỀ SỐ 1 - BQP</p>
-              <p className="font-bold text-[10px] text-blue-900">KHOA CƠ BẢN</p>
-              <div className="w-20 h-0.5 bg-black mx-auto mt-0.5" />
-            </div>
-            <div>
-              <p className="font-bold uppercase text-[11px]">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
-              <p className="font-bold text-[10px]">Độc lập - Tự do - Hạnh phúc</p>
-              <div className="w-28 h-0.5 bg-black mx-auto mt-0.5" />
-            </div>
-          </div>
-          <h1 className="text-base font-black uppercase text-black">
-            BẢNG TỔNG HỢP KẾT QUẢ RÈN LUYỆN
+          <h1 className="text-xl font-black uppercase text-black tracking-wider">
+            KẾT QUẢ RÈN LUYỆN LỚP {className}
           </h1>
-          <p className="text-xs font-bold uppercase text-black mt-0.5">
-            LỚP: {className} • {periodLabel.toUpperCase()}
-          </p>
-          <p className="text-[11px] italic text-black/80 mt-0.5">
-            Năm học: {schoolYear} • Giáo viên chủ nhiệm: {homeroomTeacher} • Sĩ số: {rows.length} HS
-          </p>
         </div>
 
         {/* SCREEN TITLE */}
@@ -190,9 +171,6 @@ export const ConductSheetTable: React.FC<ConductSheetTableProps> = ({
           <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white uppercase tracking-wider">
             KẾT QUẢ RÈN LUYỆN LỚP {className}
           </h2>
-          <p className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400 mt-0.5">
-            {periodLabel}
-          </p>
         </div>
 
         {/* TRADITIONAL CONDUCT TABLE */}
@@ -245,7 +223,10 @@ export const ConductSheetTable: React.FC<ConductSheetTableProps> = ({
                   title="Sắp xếp theo Điểm rèn luyện"
                 >
                   <div className="flex items-center justify-center gap-1">
-                    <span>Điểm rèn luyện</span>
+                    <div className="flex flex-col items-center leading-tight">
+                      <span>Điểm</span>
+                      <span>rèn luyện</span>
+                    </div>
                     {onSortChange && sortField === 'score' && (
                       sortDirection === 'asc' ? <ArrowUp className="h-3 w-3 text-blue-600 print:hidden" /> : <ArrowDown className="h-3 w-3 text-blue-600 print:hidden" />
                     )}
@@ -340,28 +321,6 @@ export const ConductSheetTable: React.FC<ConductSheetTableProps> = ({
             {stats.weakCount !== undefined && ` | Yếu: ${stats.weakCount}`}
           </div>
         )}
-
-        {/* PRINT SIGNATURE FOOTER */}
-        <div className="hidden print:grid grid-cols-3 text-center text-xs pt-8 mt-6 border-t border-black break-inside-avoid">
-          <div>
-            <p className="font-bold uppercase text-[11px]">LỚP TRƯỞNG</p>
-            <p className="text-[10px] italic text-slate-600 mt-0.5">(Ký và ghi rõ họ tên)</p>
-            <div className="h-16" />
-          </div>
-          <div>
-            <p className="font-bold uppercase text-[11px]">GIÁO VIÊN CHỦ NHIỆM</p>
-            <p className="text-[10px] italic text-slate-600 mt-0.5">(Ký và ghi rõ họ tên)</p>
-            <div className="h-16" />
-            <p className="font-bold text-[11px]">{homeroomTeacher}</p>
-          </div>
-          <div>
-            <p className="text-[10px] italic text-slate-600">Thái Nguyên, ngày ..... tháng ..... năm 2026</p>
-            <p className="font-bold uppercase text-[11px] mt-1">TRƯỞNG KHOA / TTCM</p>
-            <p className="text-[10px] italic text-slate-600 mt-0.5">(Ký và phê duyệt)</p>
-            <div className="h-16" />
-            <p className="font-bold text-[11px]">Phạm Thị Thu Trang</p>
-          </div>
-        </div>
       </div>
 
       {/* PRINT & EXPORT MODAL */}

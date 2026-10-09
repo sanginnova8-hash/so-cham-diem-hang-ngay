@@ -1,191 +1,200 @@
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx-js-style';
 import { ConductSheetRow } from '../components/ConductSheetTable';
 import { formatVietnameseNumber } from './utils';
 
 export interface ConductReportExportOptions {
   className: string;
-  schoolYear: string;
+  schoolYear?: string;
   periodLabel: string; // e.g. "Tuần 5" hoặc "Tháng 10"
   homeroomTeacher?: string;
-  departmentName?: string; // e.g. "Khoa Cơ bản"
-  schoolName?: string; // e.g. "Trường Cao đẳng Nghề số 1 - BQP"
-  approverName?: string; // e.g. "Phạm Thị Thu Trang"
-  locationDate?: string; // e.g. "Thái Nguyên, ngày 10 tháng 10 năm 2026"
+  approverName?: string;
+  locationDate?: string;
+  stats?: any;
   rows: ConductSheetRow[];
-  stats?: {
-    totalStudents: number;
-    avgScore: number;
-    excellentCount?: number;
-    goodCount?: number;
-    fairCount?: number;
-    mediumCount?: number;
-    weakCount?: number;
-    totalViolations?: number;
-    totalBonuses?: number;
-  };
+  includeSignatures?: boolean;
+  includeAdministrativeHeader?: boolean;
 }
 
+const thinBorder = {
+  top: { style: 'thin', color: { rgb: '000000' } },
+  bottom: { style: 'thin', color: { rgb: '000000' } },
+  left: { style: 'thin', color: { rgb: '000000' } },
+  right: { style: 'thin', color: { rgb: '000000' } },
+};
+
 /**
- * Xuất file Excel (.xlsx) chuẩn Sư phạm:
- * - Có Header Quốc hiệu, Cơ quan chủ quản (Bộ Quốc Phòng / Trường CĐN01 / Khoa Cơ bản)
- * - Có Tiêu đề trung tâm in hoa, gộp ô
- * - Bảng 2 tầng chuẩn (TT, Họ tên, Nhóm kỳ [Điểm rèn luyện, Lỗi vi phạm, Cộng điểm])
- * - Độ rộng cột tối ưu, ô lỗi vi phạm tự động ngắt dòng
- * - Dòng thống kê tổng hợp (Sĩ số, Điểm TB, Xếp loại)
- * - Khung chữ ký 3 bên (Lớp trưởng, GVCN, Trưởng khoa / TTCM)
+ * Xuất file Excel (.xlsx) chuẩn 100% theo mẫu sổ rèn luyện học sinh:
+ * - Dòng 1: Tiêu đề "KẾT QUẢ RÈN LUYỆN LỚP [Tên Lớp]" (Căn giữa, in hoa đậm, gộp cột A-E)
+ * - Dòng 2 & 3: Tiêu đề bảng 2 tầng chuẩn:
+ *   + Cột A: TT (gộp dòng 2-3, căn giữa)
+ *   + Cột B: Họ và tên (gộp dòng 2-3, căn giữa)
+ *   + Cột C-E: Tuần X / Tháng Y (gộp 3 cột C-E, căn giữa)
+ *   + Dòng 3: Điểm rèn luyện (căn giữa), Lỗi vi phạm (căn giữa), Cộng điểm (căn giữa)
+ * - Dữ liệu:
+ *   + Điểm rèn luyện: Chữ số ĐỎ ĐẬM (FF0000), căn giữa
+ *   + Lỗi vi phạm: Căn trái, wrapText xuống dòng từng lỗi
+ *   + Cộng điểm: Căn trái, wrapText
+ *   + 100% các ô đều có viền đen mảnh (thin border)
  */
 export function exportConductSheetToExcel(options: ConductReportExportOptions) {
-  const {
-    className,
-    schoolYear,
-    periodLabel,
-    homeroomTeacher = 'Nguyễn Văn Sang',
-    departmentName = 'KHOA CƠ BẢN',
-    schoolName = 'TRƯỜNG CAO ĐẲNG NGHỀ SỐ 1 - BQP',
-    approverName = 'Phạm Thị Thu Trang',
-    locationDate,
-    rows,
-    stats,
-  } = options;
+  const { className, periodLabel, rows } = options;
 
-  const todayStr = locationDate || `Thái Nguyên, ngày ${new Date().getDate()} tháng ${new Date().getMonth() + 1} năm ${new Date().getFullYear()}`;
+  const wb = XLSX.utils.book_new();
+  const ws: XLSX.WorkSheet = {};
 
-  // Build 2D matrix of cells
-  const aoa: (string | number)[][] = [];
+  // Row heights
+  ws['!rows'] = [
+    { hpt: 32 }, // Row 0: Title "KẾT QUẢ RÈN LUYỆN LỚP 12B6"
+    { hpt: 22 }, // Row 1: Header tier 1 (TT, Họ tên, Tuần 5)
+    { hpt: 26 }, // Row 2: Header tier 2 (Điểm rèn luyện, Lỗi vi phạm, Cộng điểm)
+  ];
 
-  // Row 0-2: Administrative headers
-  aoa.push(['BỘ QUỐC PHÒNG', '', '', 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM', '']);
-  aoa.push([schoolName, '', '', 'Độc lập - Tự do - Hạnh phúc', '']);
-  aoa.push([departmentName, '', '', '------------------------', '']);
-  aoa.push(['', '', '', '', '']); // Row 3 empty
-
-  // Row 4: Title
-  aoa.push([`BẢNG TỔNG HỢP KẾT QUẢ RÈN LUYỆN HỌC SINH`, '', '', '', '']);
-  // Row 5: Subtitle
-  aoa.push([`Lớp: ${className} • ${periodLabel.toUpperCase()} • Năm học: ${schoolYear} • GVCN: ${homeroomTeacher}`, '', '', '', '']);
-  aoa.push(['', '', '', '', '']); // Row 6 empty
-
-  // Table Headers (Row 7 & 8)
-  const headerRow1Idx = 7;
-  const headerRow2Idx = 8;
-  aoa.push(['TT', 'Họ và tên', `KẾT QUẢ ĐÁNH GIÁ (${periodLabel.toUpperCase()})`, '', '']);
-  aoa.push(['', '', 'Điểm rèn luyện', 'Lỗi vi phạm', 'Cộng điểm']);
-
-  // Data rows (Row 9 onwards)
-  rows.forEach((r, idx) => {
-    aoa.push([
-      idx + 1,
-      r.fullName,
-      r.finalScore,
-      r.violationsLines.length > 0 ? r.violationsLines.join('\n') : '',
-      r.bonusesList.length > 0 ? r.bonusesList.join(', ') : '',
-    ]);
-  });
-
-  const dataEndRowIdx = aoa.length - 1;
-
-  // Statistics Summary Row
-  if (stats) {
-    aoa.push(['', '', '', '', '']); // empty separator
-    const summaryText = `Tổng số học sinh: ${stats.totalStudents} | Điểm trung bình: ${formatVietnameseNumber(stats.avgScore)}` +
-      (stats.goodCount !== undefined ? ` | Tốt: ${stats.goodCount}` : '') +
-      (stats.fairCount !== undefined ? ` | Khá: ${stats.fairCount}` : '') +
-      (stats.mediumCount !== undefined ? ` | Đạt: ${stats.mediumCount}` : '') +
-      (stats.weakCount !== undefined ? ` | Yếu: ${stats.weakCount}` : '');
-    aoa.push(['THỐNG KÊ', summaryText, '', '', '']);
-  }
-
-  // Signature section
-  aoa.push(['', '', '', '', '']); // empty
-  aoa.push(['', '', '', todayStr, '']);
-  aoa.push(['LỚP TRƯỞNG', '', 'GIÁO VIÊN CHỦ NHIỆM', 'TRƯỞNG KHOA / TTCM', '']);
-  aoa.push(['(Ký và ghi rõ họ tên)', '', '(Ký và ghi rõ họ tên)', '(Ký và phê duyệt)', '']);
-  aoa.push(['', '', '', '', '']);
-  aoa.push(['', '', '', '', '']);
-  aoa.push(['', '', '', '', '']);
-  aoa.push(['', '', homeroomTeacher, approverName, '']);
-
-  // Convert AOA to worksheet
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-  // Set column widths
+  // Column widths
   ws['!cols'] = [
     { wch: 6 },   // TT
-    { wch: 26 },  // Họ và tên
-    { wch: 16 },  // Điểm rèn luyện
+    { wch: 25 },  // Họ và tên
+    { wch: 13 },  // Điểm rèn luyện
     { wch: 46 },  // Lỗi vi phạm
-    { wch: 38 },  // Cộng điểm
+    { wch: 46 },  // Cộng điểm
   ];
 
-  // Set cell merges
-  const merges: XLSX.Range[] = [
-    // Header merges
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }, // Bộ Quốc Phòng
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 1 } }, // Trường
-    { s: { r: 2, c: 0 }, e: { r: 2, c: 1 } }, // Khoa
-    { s: { r: 0, c: 3 }, e: { r: 0, c: 4 } }, // Quốc hiệu
-    { s: { r: 1, c: 3 }, e: { r: 1, c: 4 } }, // Tiêu ngữ
-    { s: { r: 2, c: 3 }, e: { r: 2, c: 4 } }, // Gạch chân
-    // Title merges
-    { s: { r: 4, c: 0 }, e: { r: 4, c: 4 } }, // Tiêu đề chính
-    { s: { r: 5, c: 0 }, e: { r: 5, c: 4 } }, // Dòng phụ
-    // Table Header merges
-    { s: { r: headerRow1Idx, c: 0 }, e: { r: headerRow2Idx, c: 0 } }, // TT
-    { s: { r: headerRow1Idx, c: 1 }, e: { r: headerRow2Idx, c: 1 } }, // Họ và tên
-    { s: { r: headerRow1Idx, c: 2 }, e: { r: headerRow1Idx, c: 4 } }, // Cụm kỳ đánh giá
-  ];
+  // Helper to safely set a cell
+  const setCell = (r: number, c: number, val: string | number, style: any) => {
+    const ref = XLSX.utils.encode_cell({ r, c });
+    ws[ref] = {
+      t: typeof val === 'number' ? 'n' : 's',
+      v: val,
+      s: style,
+    };
+  };
 
-  if (stats) {
-    const statsRowIdx = dataEndRowIdx + 2;
-    merges.push({ s: { r: statsRowIdx, c: 1 }, e: { r: statsRowIdx, c: 4 } });
+  // Helper to ensure all merged cells have border
+  const fillMergeBorders = (startR: number, startC: number, endR: number, endC: number, baseStyle: any) => {
+    for (let r = startR; r <= endR; r++) {
+      for (let c = startC; c <= endC; c++) {
+        const ref = XLSX.utils.encode_cell({ r, c });
+        if (!ws[ref]) {
+          ws[ref] = { t: 's', v: '', s: baseStyle };
+        } else {
+          ws[ref].s = { ...ws[ref].s, border: thinBorder };
+        }
+      }
+    }
+  };
+
+  // 1. ROW 0: Title "KẾT QUẢ RÈN LUYỆN LỚP 12B6"
+  const titleText = `KẾT QUẢ RÈN LUYỆN LỚP ${className}`;
+  const titleStyle = {
+    font: { name: 'Times New Roman', sz: 14, bold: true, color: { rgb: '000000' } },
+    alignment: { horizontal: 'center', vertical: 'center' },
+  };
+  setCell(0, 0, titleText, titleStyle);
+  for (let c = 1; c <= 4; c++) {
+    setCell(0, c, '', titleStyle);
   }
 
-  // Signature row merges
-  const sigDateRowIdx = aoa.length - 7;
-  const sigTitleRowIdx = aoa.length - 6;
-  const sigSubRowIdx = aoa.length - 5;
-  const sigNameRowIdx = aoa.length - 1;
+  // 2. ROW 1 & 2: Header Tier 1 & 2
+  const headerStyle = {
+    font: { name: 'Times New Roman', sz: 11, bold: true, color: { rgb: '000000' } },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    border: thinBorder,
+  };
 
-  merges.push({ s: { r: sigDateRowIdx, c: 3 }, e: { r: sigDateRowIdx, c: 4 } });
-  merges.push({ s: { r: sigTitleRowIdx, c: 0 }, e: { r: sigTitleRowIdx, c: 1 } });
-  merges.push({ s: { r: sigTitleRowIdx, c: 3 }, e: { r: sigTitleRowIdx, c: 4 } });
-  merges.push({ s: { r: sigSubRowIdx, c: 0 }, e: { r: sigSubRowIdx, c: 1 } });
-  merges.push({ s: { r: sigSubRowIdx, c: 3 }, e: { r: sigSubRowIdx, c: 4 } });
-  merges.push({ s: { r: sigNameRowIdx, c: 0 }, e: { r: sigNameRowIdx, c: 1 } });
-  merges.push({ s: { r: sigNameRowIdx, c: 3 }, e: { r: sigNameRowIdx, c: 4 } });
+  // Cell A2 (r:1, c:0): TT (merge A2:A3)
+  setCell(1, 0, 'TT', headerStyle);
+  setCell(2, 0, '', headerStyle);
 
-  ws['!merges'] = merges;
+  // Cell B2 (r:1, c:1): Họ và tên (merge B2:B3)
+  setCell(1, 1, 'Họ và tên', headerStyle);
+  setCell(2, 1, '', headerStyle);
 
-  // Create workbook and write
-  const wb = XLSX.utils.book_new();
+  // Cell C2 (r:1, c:2): Tuần 5 (merge C2:E2)
+  setCell(1, 2, periodLabel, headerStyle);
+  setCell(1, 3, '', headerStyle);
+  setCell(1, 4, '', headerStyle);
+
+  // Cell C3 (r:2, c:2): Điểm rèn luyện
+  setCell(2, 2, 'Điểm\nrèn luyện', headerStyle);
+
+  // Cell D3 (r:2, c:3): Lỗi vi phạm
+  setCell(2, 3, 'Lỗi vi phạm', headerStyle);
+
+  // Cell E3 (r:2, c:4): Cộng điểm
+  setCell(2, 4, 'Cộng điểm', headerStyle);
+
+  // Ensure merge borders
+  fillMergeBorders(1, 0, 2, 0, headerStyle);
+  fillMergeBorders(1, 1, 2, 1, headerStyle);
+  fillMergeBorders(1, 2, 1, 4, headerStyle);
+
+  // 3. DATA ROWS (Row 3 onwards)
+  rows.forEach((r, idx) => {
+    const rowIdx = 3 + idx;
+
+    // TT
+    setCell(rowIdx, 0, idx + 1, {
+      font: { name: 'Times New Roman', sz: 11, color: { rgb: '000000' } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: thinBorder,
+    });
+
+    // Họ và tên
+    setCell(rowIdx, 1, r.fullName, {
+      font: { name: 'Times New Roman', sz: 11, color: { rgb: '000000' } },
+      alignment: { horizontal: 'left', vertical: 'center' },
+      border: thinBorder,
+    });
+
+    // Điểm rèn luyện (In chữ số đỏ đậm FF0000 y hệt mẫu)
+    setCell(rowIdx, 2, r.finalScore, {
+      font: { name: 'Times New Roman', sz: 12, bold: true, color: { rgb: 'FF0000' } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: thinBorder,
+    });
+
+    // Lỗi vi phạm (xuống dòng từng lỗi, wrapText)
+    const violationsStr = r.violationsLines.length > 0 ? r.violationsLines.join('\n') : '';
+    setCell(rowIdx, 3, violationsStr, {
+      font: { name: 'Times New Roman', sz: 10.5, color: { rgb: '000000' } },
+      alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
+      border: thinBorder,
+    });
+
+    // Cộng điểm (cách nhau dấu phẩy hoặc xuống dòng, wrapText)
+    const bonusesStr = r.bonusesList.length > 0 ? r.bonusesList.join(', ') : '';
+    setCell(rowIdx, 4, bonusesStr, {
+      font: { name: 'Times New Roman', sz: 10.5, color: { rgb: '000000' } },
+      alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
+      border: thinBorder,
+    });
+  });
+
+  // Cell merges
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }, // Title
+    { s: { r: 1, c: 0 }, e: { r: 2, c: 0 } }, // TT
+    { s: { r: 1, c: 1 }, e: { r: 2, c: 1 } }, // Họ và tên
+    { s: { r: 1, c: 2 }, e: { r: 1, c: 4 } }, // Tuần 5
+  ];
+
+  // Set ref range
+  const totalRows = 3 + rows.length;
+  ws['!ref'] = `A1:E${Math.max(totalRows, 4)}`;
+
+  // Append sheet and download
   const cleanSheetName = periodLabel.replace(/\s+/g, '_');
   XLSX.utils.book_append_sheet(wb, ws, cleanSheetName.slice(0, 31));
 
-  const fileName = `So_Ren_Luyen_Lop_${className}_${periodLabel.replace(/\s+/g, '_')}_${schoolYear.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`;
+  const fileName = `Ket_qua_ren_luyen_Lop_${className}_${periodLabel.replace(/\s+/g, '_')}.xlsx`;
   XLSX.writeFile(wb, fileName);
 }
 
 /**
- * Xuất file Word (.doc) chuẩn Sư phạm mở trực tiếp trong Microsoft Word:
- * - Định dạng bảng viền đen vector rõ nét
- * - Phông chữ Times New Roman chuẩn giáo dục
- * - Đầy đủ Quốc hiệu, Tiêu ngữ, Khung chữ ký 3 bên
+ * Xuất file Word (.doc) chuẩn mẫu hiển thị y hệt ảnh:
+ * Tiêu đề KẾT QUẢ RÈN LUYỆN LỚP [Tên Lớp], bảng 5 cột viền đen, điểm đỏ, ngắt dòng
  */
 export function exportConductSheetToWord(options: ConductReportExportOptions) {
-  const {
-    className,
-    schoolYear,
-    periodLabel,
-    homeroomTeacher = 'Nguyễn Văn Sang',
-    departmentName = 'KHOA CƠ BẢN',
-    schoolName = 'TRƯỜNG CAO ĐẲNG NGHỀ SỐ 1 - BQP',
-    approverName = 'Phạm Thị Thu Trang',
-    locationDate,
-    rows,
-    stats,
-  } = options;
-
-  const todayStr = locationDate || `Thái Nguyên, ngày ${new Date().getDate()} tháng ${new Date().getMonth() + 1} năm ${new Date().getFullYear()}`;
+  const { className, periodLabel, rows } = options;
 
   const tableRowsHtml = rows
     .map((r, idx) => {
@@ -198,25 +207,15 @@ export function exportConductSheetToWord(options: ConductReportExportOptions) {
 
       return `
         <tr>
-          <td style="text-align: center; padding: 6px 4px; border: 1px solid #000;">${idx + 1}</td>
-          <td style="padding: 6px 8px; border: 1px solid #000; font-weight: bold; white-space: nowrap;">${r.fullName}</td>
-          <td style="text-align: center; padding: 6px 4px; border: 1px solid #000; font-weight: bold; color: #b91c1c;">${formatVietnameseNumber(r.finalScore)}</td>
-          <td style="padding: 6px 8px; border: 1px solid #000; line-height: 1.4;">${violationsHtml}</td>
-          <td style="padding: 6px 8px; border: 1px solid #000; line-height: 1.4;">${bonusesHtml}</td>
+          <td style="text-align: center; padding: 5px 4px; border: 1px solid #000;">${idx + 1}</td>
+          <td style="padding: 5px 8px; border: 1px solid #000; white-space: nowrap;">${r.fullName}</td>
+          <td style="text-align: center; padding: 5px 4px; border: 1px solid #000; font-weight: bold; color: #ff0000; font-size: 11pt;">${formatVietnameseNumber(r.finalScore)}</td>
+          <td style="padding: 5px 8px; border: 1px solid #000; line-height: 1.35; font-size: 10pt;">${violationsHtml}</td>
+          <td style="padding: 5px 8px; border: 1px solid #000; line-height: 1.35; font-size: 10pt;">${bonusesHtml}</td>
         </tr>
       `;
     })
     .join('');
-
-  const statsHtml = stats ? `
-    <div style="margin-top: 10px; font-size: 11pt; font-style: italic;">
-      * <strong>Thống kê chung:</strong> Sĩ số: ${stats.totalStudents} học sinh | Điểm trung bình: ${formatVietnameseNumber(stats.avgScore)}
-      ${stats.goodCount !== undefined ? ` | Tốt: ${stats.goodCount}` : ''}
-      ${stats.fairCount !== undefined ? ` | Khá: ${stats.fairCount}` : ''}
-      ${stats.mediumCount !== undefined ? ` | Đạt: ${stats.mediumCount}` : ''}
-      ${stats.weakCount !== undefined ? ` | Yếu: ${stats.weakCount}` : ''}
-    </div>
-  ` : '';
 
   const htmlContent = `
     <html xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -224,76 +223,51 @@ export function exportConductSheetToWord(options: ConductReportExportOptions) {
           xmlns="http://www.w3.org/TR/REC-html40">
     <head>
       <meta charset="utf-8">
-      <title>Sổ rèn luyện lớp ${className}</title>
+      <title>KẾT QUẢ RÈN LUYỆN LỚP ${className}</title>
       <style>
         @page {
           size: 210mm 297mm;
-          margin: 15mm 15mm 15mm 15mm;
+          margin: 15mm 12mm 15mm 12mm;
         }
         body {
           font-family: 'Times New Roman', Times, serif;
           font-size: 11pt;
-          line-height: 1.3;
           color: #000;
+        }
+        h2 {
+          text-align: center;
+          font-size: 14pt;
+          font-weight: bold;
+          margin: 0 0 16px;
+          text-transform: uppercase;
         }
         table {
           width: 100%;
           border-collapse: collapse;
-          margin-top: 12px;
         }
         th, td {
           border: 1px solid #000;
-          font-size: 10.5pt;
         }
         th {
-          background-color: #f1f5f9;
           font-weight: bold;
           text-align: center;
           padding: 6px;
+          font-size: 10.5pt;
         }
       </style>
     </head>
     <body>
-      <!-- ADMINISTRATIVE HEADER -->
-      <table style="width: 100%; border: none; margin-bottom: 12px;">
-        <tr style="border: none;">
-          <td style="width: 45%; text-align: center; border: none; vertical-align: top;">
-            <div style="font-size: 10pt; text-transform: uppercase;">BỘ QUỐC PHÒNG</div>
-            <div style="font-size: 10.5pt; font-weight: bold; text-transform: uppercase;">${schoolName}</div>
-            <div style="font-size: 10pt; font-weight: bold; text-transform: uppercase; color: #1e3a8a;">${departmentName}</div>
-            <div style="width: 100px; height: 1px; background-color: #000; margin: 4px auto 0;"></div>
-          </td>
-          <td style="width: 55%; text-align: center; border: none; vertical-align: top;">
-            <div style="font-size: 10.5pt; font-weight: bold; text-transform: uppercase;">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
-            <div style="font-size: 10.5pt; font-weight: bold;">Độc lập - Tự do - Hạnh phúc</div>
-            <div style="width: 140px; height: 1px; background-color: #000; margin: 4px auto 0;"></div>
-          </td>
-        </tr>
-      </table>
+      <h2>KẾT QUẢ RÈN LUYỆN LỚP ${className}</h2>
 
-      <!-- TITLE -->
-      <div style="text-align: center; margin: 16px 0 10px;">
-        <h2 style="font-size: 14pt; font-weight: bold; margin: 0; text-transform: uppercase;">
-          BẢNG TỔNG HỢP KẾT QUẢ RÈN LUYỆN
-        </h2>
-        <div style="font-size: 11pt; font-weight: bold; margin-top: 4px;">
-          LỚP: ${className} • ${periodLabel.toUpperCase()}
-        </div>
-        <div style="font-size: 10pt; font-style: italic; margin-top: 2px;">
-          Năm học: ${schoolYear} • Giáo viên chủ nhiệm: ${homeroomTeacher} • Sĩ số: ${rows.length} HS
-        </div>
-      </div>
-
-      <!-- MAIN TABLE -->
       <table>
         <thead>
           <tr>
             <th rowspan="2" style="width: 35px;">TT</th>
             <th rowspan="2" style="width: 170px;">Họ và tên</th>
-            <th colspan="3">${periodLabel.toUpperCase()}</th>
+            <th colspan="3">${periodLabel}</th>
           </tr>
           <tr>
-            <th style="width: 85px;">Điểm rèn luyện</th>
+            <th style="width: 85px;">Điểm<br/>rèn luyện</th>
             <th>Lỗi vi phạm</th>
             <th>Cộng điểm</th>
           </tr>
@@ -301,38 +275,6 @@ export function exportConductSheetToWord(options: ConductReportExportOptions) {
         <tbody>
           ${tableRowsHtml}
         </tbody>
-      </table>
-
-      ${statsHtml}
-
-      <!-- SIGNATURE SECTION -->
-      <table style="width: 100%; border: none; margin-top: 24px; page-break-inside: avoid;">
-        <tr style="border: none;">
-          <td style="border: none;"></td>
-          <td style="border: none;"></td>
-          <td style="border: none; text-align: center; font-style: italic; font-size: 10pt;">
-            ${todayStr}
-          </td>
-        </tr>
-        <tr style="border: none;">
-          <td style="width: 33%; text-align: center; border: none; vertical-align: top;">
-            <div style="font-weight: bold; text-transform: uppercase; font-size: 10.5pt;">LỚP TRƯỞNG</div>
-            <div style="font-size: 9.5pt; font-style: italic;">(Ký và ghi rõ họ tên)</div>
-            <div style="height: 60px;"></div>
-          </td>
-          <td style="width: 34%; text-align: center; border: none; vertical-align: top;">
-            <div style="font-weight: bold; text-transform: uppercase; font-size: 10.5pt;">GIÁO VIÊN CHỦ NHIỆM</div>
-            <div style="font-size: 9.5pt; font-style: italic;">(Ký và ghi rõ họ tên)</div>
-            <div style="height: 60px;"></div>
-            <div style="font-weight: bold; font-size: 10.5pt;">${homeroomTeacher}</div>
-          </td>
-          <td style="width: 33%; text-align: center; border: none; vertical-align: top;">
-            <div style="font-weight: bold; text-transform: uppercase; font-size: 10.5pt;">TRƯỞNG KHOA / TTCM</div>
-            <div style="font-size: 9.5pt; font-style: italic;">(Ký và phê duyệt)</div>
-            <div style="height: 60px;"></div>
-            <div style="font-weight: bold; font-size: 10.5pt;">${approverName}</div>
-          </td>
-        </tr>
       </table>
     </body>
     </html>
@@ -342,7 +284,7 @@ export function exportConductSheetToWord(options: ConductReportExportOptions) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `So_Ren_Luyen_Lop_${className}_${periodLabel.replace(/\s+/g, '_')}.doc`;
+  a.download = `Ket_qua_ren_luyen_Lop_${className}_${periodLabel.replace(/\s+/g, '_')}.doc`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -350,12 +292,12 @@ export function exportConductSheetToWord(options: ConductReportExportOptions) {
 }
 
 /**
- * Sao chép bảng rèn luyện vào Clipboard dưới định dạng văn bản / HTML để dán nhanh vào Word/Excel
+ * Sao chép bảng rèn luyện vào Clipboard dưới định dạng TSV để dán thẳng vào Excel
  */
 export async function copyConductSheetToClipboard(options: ConductReportExportOptions): Promise<boolean> {
   try {
     const { rows, periodLabel } = options;
-    const header = `TT\tHọ và tên\tĐiểm rèn luyện (${periodLabel})\tLỗi vi phạm\tCộng điểm\n`;
+    const header = `TT\tHọ và tên\t${periodLabel} - Điểm rèn luyện\tLỗi vi phạm\tCộng điểm\n`;
     const body = rows.map((r, idx) => {
       const v = r.violationsLines.join('; ');
       const b = r.bonusesList.join(', ');

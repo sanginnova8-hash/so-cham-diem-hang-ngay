@@ -53,9 +53,9 @@ export const ConductSheetPrintModal: React.FC<ConductSheetPrintModalProps> = ({
 }) => {
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>('base');
-  const [showAdministrativeHeader, setShowAdministrativeHeader] = useState<boolean>(true);
-  const [showStats, setShowStats] = useState<boolean>(true);
-  const [showSignatures, setShowSignatures] = useState<boolean>(true);
+  const [showAdministrativeHeader, setShowAdministrativeHeader] = useState<boolean>(false);
+  const [showStats, setShowStats] = useState<boolean>(false);
+  const [showSignatures, setShowSignatures] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [approverName, setApproverName] = useState<string>('Phạm Thị Thu Trang');
   const [teacherName, setTeacherName] = useState<string>(homeroomTeacher);
@@ -308,16 +308,10 @@ export const ConductSheetPrintModal: React.FC<ConductSheetPrintModalProps> = ({
             )}
 
             {/* 2. REPORT TITLE */}
-            <div className="py-5 text-center">
-              <h1 className="text-base sm:text-lg font-black uppercase tracking-wider text-black">
-                BẢNG TỔNG HỢP KẾT QUẢ RÈN LUYỆN
+            <div className="py-4 text-center">
+              <h1 className="text-lg sm:text-xl font-black uppercase tracking-wider text-black">
+                KẾT QUẢ RÈN LUYỆN LỚP {className}
               </h1>
-              <p className="font-bold text-xs sm:text-sm uppercase text-black mt-1">
-                LỚP: {className} • {periodLabel.toUpperCase()}
-              </p>
-              <p className="text-xs italic text-black/80 mt-1">
-                Năm học: {schoolYear} • Giáo viên chủ nhiệm: {teacherName} • Sĩ số: {rows.length} học sinh
-              </p>
             </div>
 
             {/* 3. TRADITIONAL CONDUCT TABLE */}
@@ -345,7 +339,8 @@ export const ConductSheetPrintModal: React.FC<ConductSheetPrintModalProps> = ({
                 </tr>
                 <tr className="bg-slate-50 text-black">
                   <th className="border border-black p-1.5 text-center font-bold w-20">
-                    Điểm rèn luyện
+                    <div>Điểm</div>
+                    <div>rèn luyện</div>
                   </th>
                   <th className="border border-black p-1.5 text-center font-bold min-w-[200px]">
                     Lỗi vi phạm
