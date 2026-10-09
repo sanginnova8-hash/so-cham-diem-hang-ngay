@@ -82,16 +82,29 @@
   .print\:block {
     display: block !important;
   }
+  .print\:grid {
+    display: grid !important;
+  }
   table {
     border-collapse: collapse !important;
     width: 100% !important;
   }
+  thead {
+    display: table-header-group !important;
+  }
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
   th, td {
-    border: 1px solid #cbd5e1 !important;
-    padding: 6px 8px !important;
+    border: 1px solid #1e293b !important;
+    padding: 5px 6px !important;
+  }
+  .break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
   @page {
     margin: 1.2cm;
-    size: landscape;
   }
 }

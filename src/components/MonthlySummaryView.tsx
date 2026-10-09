@@ -41,6 +41,7 @@ import {
 } from '../lib/utils';
 import { ConductSheetTable, ConductSheetRow } from './ConductSheetTable';
 import { getStudentConductDetail } from '../lib/conductReportHelper';
+import { exportConductSheetToExcel } from '../lib/conductReportExport';
 import { TabType } from './Navbar';
 import { SummaryZaloExportModal } from './SummaryZaloExportModal';
 import { PeriodLockBannerV2 } from './v2/PeriodLockBannerV2';
@@ -228,21 +229,26 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
     });
   }, [filteredData, monthLogs]);
 
-  // Export Excel in traditional conduct sheet format
+  // Export Excel in traditional conduct sheet format with full 2-tier header and signatures
   const handleExportConductSheetExcel = () => {
-    const exportRows = conductRows.map((r) => ({
-      'TT': r.stt,
-      'Họ và tên': r.fullName,
-      'Điểm rèn luyện': r.finalScore,
-      'Lỗi vi phạm': r.violationsLines.join('\n'),
-      'Cộng điểm': r.bonusesList.join(', '),
-    }));
-
-    exportToExcel(
-      exportRows,
-      `Ket_qua_ren_luyen_Lop_${classConfig.className}_Thang_${selectedMonth}`,
-      `Thang_${selectedMonth}`
-    );
+    exportConductSheetToExcel({
+      className: classConfig.className,
+      schoolYear: classConfig.schoolYear,
+      periodLabel: `Tháng ${selectedMonth}`,
+      homeroomTeacher: classConfig.homeroomTeacher || 'Nguyễn Văn Sang',
+      rows: conductRows,
+      stats: {
+        totalStudents: monthlyData.length,
+        avgScore: stats.avgScore,
+        excellentCount: stats.ranks['Xuất sắc'],
+        goodCount: stats.ranks['Tốt'],
+        fairCount: stats.ranks['Khá'],
+        mediumCount: stats.ranks['Đạt'],
+        weakCount: stats.ranks['Không đạt'],
+        totalViolations: stats.totalViolations,
+        totalBonuses: stats.totalBonuses,
+      },
+    });
   };
 
   const handlePrint = () => {
@@ -979,8 +985,21 @@ export const MonthlySummaryView: React.FC<MonthlySummaryViewProps> = ({
       {viewMode === 'conduct-sheet' ? (
         <ConductSheetTable
           className={classConfig.className}
+          schoolYear={classConfig.schoolYear}
+          homeroomTeacher={classConfig.homeroomTeacher || 'Nguyễn Văn Sang'}
           periodLabel={`Tháng ${selectedMonth}`}
           rows={conductRows}
+          stats={{
+            totalStudents: monthlyData.length,
+            avgScore: stats.avgScore,
+            excellentCount: stats.ranks['Xuất sắc'],
+            goodCount: stats.ranks['Tốt'],
+            fairCount: stats.ranks['Khá'],
+            mediumCount: stats.ranks['Đạt'],
+            weakCount: stats.ranks['Không đạt'],
+            totalViolations: stats.totalViolations,
+            totalBonuses: stats.totalBonuses,
+          }}
           sortField={sortField === 'name' ? 'name' : sortField === 'score' ? 'score' : 'stt'}
           sortDirection={sortDirection}
           onSortChange={(field) => {
